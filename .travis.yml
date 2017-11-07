@@ -54,7 +54,7 @@ matrix:
         - COVERITY_SCAN_BRANCH_PATTERN="coverity_scan"
         - COVERITY_SCAN_BUILD_COMMAND_PREPEND="cov-configure --comptype gcc --compiler gcc-6 --template"
         - COVERITY_SCAN_BUILD_COMMAND="cmake --build ."
-        - secure: "TUlhGlB6P4KPkxB5/E5j5DB6A/PE1QdY3T3yi4niOIKXimSfxPCaZGufDo+ZFQSD7vDRNpUlmED/6sGX0iKCsPKGXtnAUZFA3R8fgDl0JrY4B9qZunknpBwhoJesfOMtHKZruiF2DPrv9xhS18+/jnS4Pi+MXJ3RbijMa4ZyyM6xzP4fd0TYPOplPBF11uWaWcL3kVZxsSbP7YHSVKjxemEzu9Rb6lu2FYwt4h/oPYnaqi6lDa9l24RzEQpPvmNDQNjPRysf83PqduZnazhVIIvAemmR7oNQx9wFuAUxnk4EnKbRBGMBL15Kfafj3czojBTS3g8RBcEn+PHAYTJBG9idl+TrEMA+c2WT+vPkqjoMduJQ7ZZEB+lc5nO8tv1gKIMxhw/xujvu0z2OvH2WXVphdhZEg3uCs+dQrQn01Vl0G/9ohjx8aQ6PKfmryZBTfACr82wklBEz0RucSnEfwzmAK8FlHulqP0YFUE1E4vt3l0DkWltBjnaliz95NUHWL8YHcj8p/LazMeJUtoLPz5AvisbpjejWDsn+FOW0ml01MPHru9Io3gByfSIbGn93yVghcEtMU74uGGR/vPMwMs+8JqIFhh+mLI9Z8IQWOWpmuMHfJjsoXXUs55uuZW6iyNZxUsTQ2RtvfuvFwjViIFUuAdFahEi0M0l7+GQVamw="
+        - secure: "satF0frPWSQsvIx+qsNpeSZn62etbn6Z6tX0qtrgacdxfKdMbLgEglM+xcs2pKlhKPLTZzEtZdnRUPjfzXa56xkpuE+p4Bq5MUQVsHaoY7c0W6XVl0RvyiThiG3wn+lNuw33x11jsJl4FhmDBbO5TbZeLbPxoPn7Ww02cQsE5bLpFpWmEi7hod1pAIufcMwiJu3kBq1SbWfAqShbYE22YB469dwLGD6YtTz9aE0xbrJakTxhlTcmz3xgzJBpUrnrNepBHJox6aJ8zaZyfNitt8wqdoyD0Bb6ZKZcNSwWfw86wnqI2kO+Zi3IXkgitaYx3h7BpXK+00aEY1Yc9Hbqfu1ARoOCcdcTma68lRdRPSqEqsg+zb3+QpApLJ+Lp0K4l5KAYsmvsG/DPDjkyf+sK7douJaQ3voZA2wtCvSlSSuWWPnUjqXAKCeDRIKUM9t36XC7Dl3u9tJQ+Bjmx34j3neLQL4P+bBjpcWwNwLpxBX//ltYaqUGdUoezGM30X8lOncsewq6ebf7973j4iMwFCFRwna5pketCKjOESbGoKuRImf9mDox0MWUz1VUW8sUAyvb1+9F5454AEdGLKHdKiADXkWyXssyoYGWHQhxvMqyevUHOu4DnvjNtVKA88542sQjJJ6LHCnwIWaB3MVUz9PpkbYmhNy15NbrC43dwCQ="
     - <<: *osx-clang
       env: BUILD_TYPE=Debug TEST_TARGET=test CMAKE_C_COMPILER=clang CMAKE_CXX_COMPILER=clang++
     - <<: *osx-clang

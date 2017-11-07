@@ -82,4 +82,8 @@ std::string makeStr(const std::wstring& str);
 
 std::string toLower(const std::string& str);
 
+unsigned int murmur_hash_inverse(unsigned int h, unsigned int seed);
+uint64_t murmur_hash_64(const void * key, uint32_t len, uint64_t seed);
+uint32_t murmur_hash(const void * key, int len, uint32_t seed);
+
 } // StringUtils

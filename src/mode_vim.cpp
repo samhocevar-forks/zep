@@ -171,7 +171,6 @@ void PicoVimMode_Vim::Init()
 void PicoVimMode_Vim::ResetCommand()
 {
     m_currentCommand.clear();
-    m_pCurrentWindow->GetDisplay().SetCommandText("");
 }
 
 void PicoVimMode_Vim::SwitchMode(VimMode mode)
@@ -995,6 +994,9 @@ void PicoVimMode_Vim::AddKeyPress(uint32_t key, uint32_t modifierKeys)
 {
     if (!m_pCurrentWindow)
         return;
+
+    // Reset command text - we will update it later
+    m_pCurrentWindow->GetDisplay().SetCommandText("");
 
     bool handled = true;
     if (m_currentMode == VimMode::Normal ||

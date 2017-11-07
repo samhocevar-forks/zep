@@ -4,6 +4,7 @@
 #include "src/mode_vim.h"
 #include "src/buffer.h"
 #include "src/display.h"
+#include "src/syntax_glsl.h"
 
 using namespace PicoVim;
 class VimTest : public testing::Test
@@ -16,7 +17,11 @@ public:
         spMode = std::make_shared<PicoVimMode_Vim>(*spEditor);
         spBuffer = spEditor->AddBuffer("Test Buffer");
 
-        // Needed due to command mode window translation.  Maybe made a dummy window instead?
+        // Add a syntax highlighting checker, to increase test coverage
+        // (seperate tests to come)
+        auto spSyntax = std::make_shared<PicoVimSyntaxGlsl>(*spBuffer);
+        spBuffer->SetSyntax(std::static_pointer_cast<PicoVimSyntax>(spSyntax));
+
         // Some vim commands depend on the shape of the view onto the buffer.  For example, 
         // moving 'down' might depend on word wrapping, etc. as to where in the buffer you actually land.
         // This is the reason for the difference between a 'Window' and a 'Buffer' (as well as that you can
