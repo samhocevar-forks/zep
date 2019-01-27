@@ -224,7 +224,7 @@ void ZepSyntax::UpdateSyntax()
         }
         else if (m_identifiers.find(token) != m_identifiers.end())
         {
-            mark(itrFirst, itrLast, ThemeColor::Keyword);
+            mark(itrFirst, itrLast, ThemeColor::Identifier);
         }
         else if (token.find_first_not_of("0123456789") == std::string::npos)
         {
@@ -239,14 +239,14 @@ void ZepSyntax::UpdateSyntax()
             mark(itrFirst, itrLast, ThemeColor::Normal);
         }
 
-        std::string commentStr = "/";
+        std::string commentStr = "-";
         auto itrComment = buffer.find_first_of(itrFirst, itrLast, commentStr.begin(), commentStr.end());
         if (itrComment != buffer.end())
         {
             auto itrCommentStart = itrComment++;
             if (itrComment < buffer.end())
             {
-                if (*itrComment == '/')
+                if (*itrComment == '-')
                 {
                     itrLast = buffer.find_first_of(itrCommentStart, buffer.end(), lineEnd.begin(), lineEnd.end());
                     mark(itrCommentStart, itrLast, ThemeColor::Comment);

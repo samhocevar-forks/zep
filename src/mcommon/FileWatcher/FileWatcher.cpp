@@ -32,6 +32,20 @@
 #elif FILEWATCHER_PLATFORM == FILEWATCHER_PLATFORM_LINUX
 #include <FileWatcher/FileWatcherLinux.h>
 #define FILEWATCHER_IMPL FileWatcherLinux
+#else
+class FileWatcherNull : public FW::FileWatcherImpl
+{
+public:
+    FileWatcherNull() {}
+    ~FileWatcherNull() {}
+    FW::WatchID addWatch(const FW::String&, FW::FileWatchListener*) { return 0; }
+    FW::WatchID addWatch(const FW::String&, FW::FileWatchListener*, bool) { return 0; }
+    void removeWatch(const FW::String&) {}
+    void removeWatch(FW::WatchID) {}
+    void update() {}
+    virtual void handleAction(FW::WatchStruct*, const FW::String&, unsigned long) {}
+};
+#define FILEWATCHER_IMPL FileWatcherNull
 #endif
 
 namespace FW

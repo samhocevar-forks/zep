@@ -26,6 +26,7 @@ enum class ThemeColor
     Mode,
     Normal,
     Keyword,
+    Identifier,
     Integer,
     Comment,
     Whitespace,

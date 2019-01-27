@@ -503,6 +503,10 @@ bool ZepWindow::DisplayLine(const SpanInfo& lineInfo, const NRectf& region, int 
         // Note: We don't really support UTF8, but our whitespace symbol is UTF8!
         const utf8* pEnd = pCh + UTF8_CHAR_LEN(*pCh);
 
+        // If this is a PICO-8 glyph, revert the operation above
+        if (*pCh >= 0x80 && *pCh <= 0x99)
+            pEnd = pCh + 1;
+
         auto textSize = GetTextSize(pCh, pEnd);
         if (displayPass == 0)
         {
@@ -546,6 +550,23 @@ bool ZepWindow::DisplayLine(const SpanInfo& lineInfo, const NRectf& region, int 
                 {
                     col = pSyntax != nullptr ? pSyntax->GetSyntaxColorAt(ch) : m_pBuffer->GetTheme().GetColor(ThemeColor::Text);
                 }
+
+                // PICO-8 glyph support and uppercase/lowercase swap
+                utf8 tmp[2];
+                if (*pCh >= 0x80 && *pCh <= 0x99)
+                {
+                    tmp[0] = '\xc2';
+                    tmp[1] = *pCh;
+                    pCh = &tmp[0];
+                    pEnd = pCh + 2;
+                }
+                else if (isalpha(*pCh))
+                {
+                    tmp[0] = *pCh ^ ('A' ^ 'a');
+                    pCh = &tmp[0];
+                    pEnd = pCh + 1;
+                }
+
                 GetEditor().GetDisplay().DrawChars(NVec2f(screenPosX, ToWindowY(lineInfo.spanYPx)), col, pCh, pEnd);
             }
         }
