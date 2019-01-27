@@ -232,7 +232,7 @@ void ZepSyntax::UpdateSyntax()
         }
         else if (token.find_first_not_of("0123456789") == std::string::npos)
         {
-            mark(itrFirst, itrLast, ThemeColor::Integer);
+            mark(itrFirst, itrLast, ThemeColor::Number);
         }
         else if (token.find_first_not_of("{}()[]") == std::string::npos)
         {
@@ -241,6 +241,21 @@ void ZepSyntax::UpdateSyntax()
         else
         {
             mark(itrFirst, itrLast, ThemeColor::Normal);
+        }
+
+        std::string stringStr = "\"";
+        auto itrString = buffer.find_first_of(itrFirst, itrLast, stringStr.begin(), stringStr.end());
+        if (itrString != buffer.end())
+        {
+            auto itrStringStart = itrString++;
+            if (itrString < buffer.end())
+            {
+                itrLast = buffer.find_first_of(itrString, buffer.end(), stringStr.begin(), stringStr.end());
+                if (itrLast < buffer.end())
+                {
+                    mark(itrStringStart, ++itrLast, ThemeColor::String);
+                }
+            }
         }
 
         std::string commentStr = "-";
