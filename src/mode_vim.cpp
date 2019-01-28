@@ -1598,6 +1598,11 @@ void ZepMode_Vim::HandleInsert(uint32_t key)
             // Get the string we inserted
             auto strInserted = std::string(buffer.GetText().begin() + m_insertBegin, buffer.GetText().begin() + insertEnd);
 
+            // PICO-8 replaces capital letters with special glyphs
+            for (size_t i = 0; i < strInserted.size(); ++i)
+                if (strInserted[i] >= 'A' && strInserted[i] <= 'Z')
+                    strInserted[i] = (char)(strInserted[i] - 'A' + 0x80);
+
             // Remember the inserted string for repeating the command
             m_lastInsertString = strInserted;
 
@@ -1662,6 +1667,11 @@ void ZepMode_Vim::HandleInsert(uint32_t key)
             ch = "j" + ch;
         }
         m_pendingEscape = false;
+
+        // PICO-8 replaces capital letters with special glyphs
+        for (size_t i = 0; i < ch.size(); ++i)
+            if (ch[i] >= 'A' && ch[i] <= 'Z')
+                ch[i] = (char)(ch[i] - 'A' + 0x80);
 
         buffer.Insert(bufferCursor, ch);
 
