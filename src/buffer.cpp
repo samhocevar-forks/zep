@@ -12,34 +12,53 @@
 
 namespace
 {
+
+// Ensure the character is >=0 and <=127 as in the ASCII standard,
+// used by the functions below.
+// isalnum, for example will assert on debug build if not in this range.
+inline int ToASCII(const char ch)
+{
+    auto ret = (unsigned int)ch;
+    ret = std::max(0u, ret);
+    ret = std::min(ret, 127u);
+    return ret;
+}
+
 // A VIM-like definition of a word.  Actually, in Vim this can be changed, but this editor
 // assumes a word is alphanumeric or underscore for consistency
-inline bool IsWordChar(const char ch)
+inline bool IsWordChar(const char c)
 {
-    return std::isalnum((unsigned int)ch) || ch == '_';
+    auto ch = ToASCII(c);
+    return std::isalnum(ch) || ch == '_';
 }
-inline bool IsWordOrSepChar(const char ch)
+inline bool IsWordOrSepChar(const char c)
 {
-    return std::isalnum((unsigned int)ch) || ch == '_' || ch == ' ' || ch == '\n' || ch == 0;
+    auto ch = ToASCII(c);
+    return std::isalnum(ch) || ch == '_' || ch == ' ' || ch == '\n' || ch == 0;
 }
-inline bool IsWORDChar(const char ch)
+inline bool IsWORDChar(const char c)
 {
-    return std::isgraph((unsigned int)ch);
+    auto ch = ToASCII(c);
+    return std::isgraph(ch);
 }
-inline bool IsWORDOrSepChar(const char ch)
+inline bool IsWORDOrSepChar(const char c)
 {
-    return std::isgraph((unsigned int)ch) || ch == ' ' || ch == '\n' || ch == 0;
+    auto ch = ToASCII(c);
+    return std::isgraph(ch) || ch == ' ' || ch == '\n' || ch == 0;
 }
-inline bool IsSpace(const char ch)
+inline bool IsSpace(const char c)
 {
+    auto ch = ToASCII(c);
     return ch == ' ';
 }
-inline bool IsSpaceOrTerminal(const char ch)
+inline bool IsSpaceOrTerminal(const char c)
 {
+    auto ch = ToASCII(c);
     return ch == ' ' || ch == 0 || ch == '\n';
 }
-inline bool IsNewlineOrEnd(const char ch)
+inline bool IsNewlineOrEnd(const char c)
 {
+    auto ch = ToASCII(c);
     return ch == '\n' || ch == 0;
 }
 
@@ -830,21 +849,21 @@ void ZepBuffer::UpdateForDelete(const BufferLocation& startOffset, const BufferL
     auto distance = endOffset - startOffset;
     for (auto& marker : m_rangeMarkers)
     {
-        if (startOffset >= marker.range.second)
+        if (startOffset >= marker->range.second)
         {
             continue;
         }
-        else if (endOffset <= marker.range.first)
+        else if (endOffset <= marker->range.first)
         {
-            marker.range.first -= distance;
-            marker.range.second -= distance;
+            marker->range.first -= distance;
+            marker->range.second -= distance;
         }
         else
         {
-            auto overlapStart = std::max(startOffset, marker.range.first);
-            auto overlapEnd = std::min(endOffset, marker.range.second);
+            auto overlapStart = std::max(startOffset, marker->range.first);
+            auto overlapEnd = std::min(endOffset, marker->range.second);
             auto dist = overlapEnd - overlapStart;
-            marker.range.second -= dist;
+            marker->range.second -= dist;
         }
     }
 }
@@ -856,19 +875,19 @@ void ZepBuffer::UpdateForInsert(const BufferLocation& startOffset, const BufferL
     auto distance = endOffset - startOffset;
     for (auto& marker : m_rangeMarkers)
     {
-        if (marker.range.second <= startOffset)
+        if (marker->range.second <= startOffset)
         {
             continue;
         }
 
-        if (marker.range.first >= startOffset)
+        if (marker->range.first >= startOffset)
         {
-            marker.range.first += distance;
-            marker.range.second += distance;
+            marker->range.first += distance;
+            marker->range.second += distance;
         }
         else
         {
-            marker.range.second += distance;
+            marker->range.second += distance;
         }
     }
 }
@@ -1036,9 +1055,9 @@ void ZepBuffer::SetSelection(const BufferRange& selection)
     }
 }
 
-void ZepBuffer::AddRangeMarker(const RangeMarker& marker)
+void ZepBuffer::AddRangeMarker(std::shared_ptr<RangeMarker> spMarker)
 {
-    m_rangeMarkers.emplace_back(marker);
+    m_rangeMarkers.emplace_back(spMarker);
 }
 
 void ZepBuffer::ClearRangeMarkers()

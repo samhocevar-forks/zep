@@ -60,16 +60,30 @@ enum class LineLocation
 using BufferLocation = long;
 using BufferRange = std::pair<BufferLocation, BufferLocation>;
 
+namespace RangeMarkerDisplayType
+{
+enum
+{
+    Underline = (1 << 0),   // Underline the range
+    Background = (1 << 1),  // Add a background to the range
+    Tooltip = (1 << 2),     // Show a tooltip using the name/description
+    Indicator = (1 << 3),    // Show an indicator on the left side
+    All = Underline | Tooltip | Indicator
+};
+};
+
 struct RangeMarker
 {
     long bufferLine = -1;
     BufferRange range;
-    ThemeColor color;
+    ThemeColor textColor;
+    ThemeColor highlightColor;
+    uint32_t displayType = RangeMarkerDisplayType::All;
     std::string name;
     std::string description;
 };
 
-using tRangeMarkers = std::vector<RangeMarker>;
+using tRangeMarkers = std::vector<std::shared_ptr<RangeMarker>>;
 
 const long InvalidOffset = -1;
 
@@ -184,7 +198,7 @@ public:
     void SetSelection(const BufferRange& sel);
     BufferRange GetSelection() const;
 
-    void AddRangeMarker(const RangeMarker& marker);
+    void AddRangeMarker(std::shared_ptr<RangeMarker> spMarker);
     void ClearRangeMarkers();
     const tRangeMarkers& GetRangeMarkers() const;
 
@@ -237,4 +251,5 @@ struct BufferMessage : public ZepMessage
     BufferLocation startLocation;
     BufferLocation endLocation;
 };
+
 } // namespace Zep

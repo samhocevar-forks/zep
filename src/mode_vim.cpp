@@ -164,7 +164,7 @@ void CommandContext::GetCommandAndCount()
         if (*itr == 'f' || *itr == 'F' || *itr == 'c')
         {
             while (itr != commandText.end()
-                && std::isgraph(*itr))
+                   && std::isgraph(*itr))
             {
                 command1 += *itr;
                 itr++;
@@ -173,7 +173,7 @@ void CommandContext::GetCommandAndCount()
         else
         {
             while (itr != commandText.end()
-                && std::isgraph(*itr) && !std::isdigit(*itr))
+                   && std::isgraph(*itr) && !std::isdigit(*itr))
             {
                 command1 += *itr;
                 itr++;
@@ -182,9 +182,7 @@ void CommandContext::GetCommandAndCount()
     }
 
     // If not a register target, then another count
-    if (command1[0] != '\"' &&
-        command1[0] != ':' &&
-        command1[0] != '/')
+    if (command1[0] != '\"' && command1[0] != ':' && command1[0] != '/')
     {
         while (itr != commandText.end()
                && std::isdigit(*itr))
@@ -577,25 +575,51 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
             {
                 markerType = std::stoi(strTok[1]);
             }
-            RangeMarker marker;
+            auto spMarker = std::make_shared<RangeMarker>();
             long start, end;
-            start = buffer.GetLinePos(bufferCursor, LineLocation::LineFirstGraphChar);
-            end = buffer.GetLinePos(bufferCursor, LineLocation::LineLastGraphChar) + 1;
-            marker.range = BufferRange{start, end};
+
+            if (m_currentMode == EditorMode::Visual)
+            {
+                auto range = GetCurrentWindow()->GetBuffer().GetSelection();
+                start = range.first;
+                end = range.second;
+            }
+            else
+            {
+                start = buffer.GetLinePos(bufferCursor, LineLocation::LineFirstGraphChar);
+                end = buffer.GetLinePos(bufferCursor, LineLocation::LineLastGraphChar) + 1;
+            }
+            spMarker->range = BufferRange{start, end};
             switch (markerType)
             {
+                case 3:
+                    spMarker->highlightColor = ThemeColor::TabActive;
+                    spMarker->textColor = ThemeColor::Text;
+                    spMarker->name = "Filled Marker";
+                    spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
+                    spMarker->displayType = RangeMarkerDisplayType::Tooltip | RangeMarkerDisplayType::Underline | RangeMarkerDisplayType::Indicator;
+                    break;
+                case 2:
+                    spMarker->highlightColor = ThemeColor::Warning;
+                    spMarker->textColor = ThemeColor::Text;
+                    spMarker->name = "Tooltip";
+                    spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
+                    spMarker->displayType = RangeMarkerDisplayType::Tooltip;
+                    break;
                 case 1:
-                    marker.color = ThemeColor::Warning;
-                    marker.name = "Warning";
-                    marker.name = "This is an example warning mark";
+                    spMarker->highlightColor = ThemeColor::Warning;
+                    spMarker->textColor = ThemeColor::Text;
+                    spMarker->name = "Warning";
+                    spMarker->description = "This is an example warning mark";
                     break;
                 case 0:
                 default:
-                    marker.color = ThemeColor::Error;
-                    marker.name = "Error";
-                    marker.name = "This is an example error mark";
+                    spMarker->highlightColor = ThemeColor::Error;
+                    spMarker->textColor = ThemeColor::Text;
+                    spMarker->name = "Error";
+                    spMarker->description = "This is an example error mark";
             }
-            buffer.AddRangeMarker(marker);
+            buffer.AddRangeMarker(spMarker);
         }
         else if (strCommand == ":ZWhiteSpace")
         {
@@ -1418,8 +1442,7 @@ void ZepMode_Vim::AddKeyPress(uint32_t key, uint32_t modifierKeys)
 
         // Update the typed command
         // TODO: Cursor keys on the command line
-        if (key == ':' || m_currentCommand[0] == ':' ||
-            key =='/' || m_currentCommand[0] == '/')
+        if (key == ':' || m_currentCommand[0] == ':' || key == '/' || m_currentCommand[0] == '/')
         {
             if (HandleExCommand(m_currentCommand, key))
             {
@@ -1432,9 +1455,7 @@ void ZepMode_Vim::AddKeyPress(uint32_t key, uint32_t modifierKeys)
         }
 
         // ... and show it in the command bar if desired
-        if (m_currentCommand[0] == ':' || 
-            m_currentCommand[0] == '/' ||
-            m_settings.ShowNormalModeKeyStrokes)
+        if (m_currentCommand[0] == ':' || m_currentCommand[0] == '/' || m_settings.ShowNormalModeKeyStrokes)
         {
             GetEditor().SetCommandText(m_currentCommand);
             return;
