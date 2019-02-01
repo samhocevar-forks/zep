@@ -73,6 +73,7 @@ ZepBuffer::ZepBuffer(ZepEditor& editor, const std::string& strName)
     : ZepComponent(editor)
     , m_strName(strName)
 {
+#if 0
     if (!(editor.GetFlags() & ZepEditorFlags::DisableThreads))
     {
         try
@@ -84,6 +85,7 @@ ZepBuffer::ZepBuffer(ZepEditor& editor, const std::string& strName)
             // Threads are not supported on this platform; ignore
         }
     }
+#endif
     SetText("");
 }
 
