@@ -35,7 +35,8 @@ ZepSyntax::~ZepSyntax()
 
 NVec4f ZepSyntax::GetSyntaxColorAt(long offset) const
 {
-    if (m_processedChar < offset || m_syntax.size() <= offset)
+    Wait();
+    if (m_processedChar < offset || ((long)m_syntax.size()) <= offset)
     {
         return m_buffer.GetTheme().GetColor(ThemeColor::Normal);
     }
@@ -55,12 +56,21 @@ NVec4f ZepSyntax::GetSyntaxColorAt(long offset) const
 
 ThemeColor ZepSyntax::GetSyntaxAt(long offset) const
 {
-    if (m_processedChar < offset || m_syntax.size() <= offset)
+    Wait();
+    if (m_processedChar < offset || (long)m_syntax.size() <= offset)
     {
         return ThemeColor::Normal;
     }
 
     return m_syntax[offset];
+}
+
+void ZepSyntax::Wait() const
+{
+    if (m_syntaxResult.valid())
+    {
+        m_syntaxResult.wait();
+    }
 }
 
 void ZepSyntax::Interrupt()
@@ -93,16 +103,10 @@ void ZepSyntax::QueueUpdateSyntax(BufferLocation startLocation, BufferLocation e
     m_targetChar = std::min(long(m_targetChar), long(m_buffer.GetText().size() - 1));
 
     // Have the thread update the syntax in the new region
-    if (!m_buffer.GetThreadPool())
-    {
-        UpdateSyntax();
-    }
-    else
-    {
-        m_syntaxResult = m_buffer.GetThreadPool()->enqueue([=]() {
+    // If the pool has no threads, this will end up serial
+    m_syntaxResult = GetEditor().GetThreadPool().enqueue([=]() {
             UpdateSyntax();
-        });
-    }
+    });
 }
 
 void ZepSyntax::Notify(std::shared_ptr<ZepMessage> spMsg)

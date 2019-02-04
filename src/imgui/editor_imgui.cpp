@@ -21,7 +21,6 @@ void ZepEditor_ImGui::HandleInput()
 {
     auto& io = ImGui::GetIO();
 
-    bool inputChanged = false;
     bool handled = false;
 
     uint32_t mod = 0;
@@ -64,57 +63,74 @@ void ZepEditor_ImGui::HandleInput()
     if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::TAB, mod);
+        return;
     }
     if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::ESCAPE, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::RETURN, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::DEL, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::HOME, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::END, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::BACKSPACE, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::RIGHT, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::LEFT, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::UP, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::DOWN, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageDown)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::PAGEDOWN, mod);
+        return;
     }
     else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageUp)))
     {
         GetCurrentMode()->AddKeyPress(ExtKeys::PAGEUP, mod);
+        return;
     }
     else if (io.KeyCtrl)
     {
+        // SDL Remaps to its own scancodes; and since we can't look them up in the standard IMGui list
+        // without modifying the ImGui base code, we have special handling here for CTRL.
+        // For the Win32 case, we use VK_A (ASCII) is handled below
+#if defined(_SDL_H) || defined(ZEP_USE_SDL)
         if (ImGui::IsKeyPressed(KEY_1))
         {
             SetMode(ZepMode_Standard::StaticName());
@@ -142,12 +158,46 @@ void ZepEditor_ImGui::HandleInput()
                 handled = true;
             }
         }
+#else
+        if (ImGui::IsKeyPressed('1'))
+        {
+            SetMode(ZepMode_Standard::StaticName());
+            handled = true;
+        }
+        else if (ImGui::IsKeyPressed('2'))
+        {
+            SetMode(ZepMode_Vim::StaticName());
+            handled = true;
+        }
+        else
+        {
+            for (int ch = 'A'; ch <= 'Z'; ch++)
+            {
+                if (ImGui::IsKeyPressed(ch))
+                {
+                    GetCurrentMode()->AddKeyPress(ch - 'A' + 'a', mod);
+                    handled = true;
+                }
+            }
+
+            if (ImGui::IsKeyPressed(KEY_SPACE))
+            {
+                GetCurrentMode()->AddKeyPress(' ', mod);
+                handled = true;
+            }
+        }
+#endif
+
     }
 
     if (!handled)
     {
         for (int n = 0; n < io.InputQueueCharacters.Size && io.InputQueueCharacters[n]; n++)
         {
+            // Ignore '\r' - sometimes ImGui generates it!
+            if (io.InputQueueCharacters[n] == '\r')
+                continue;
+
             GetCurrentMode()->AddKeyPress(io.InputQueueCharacters[n], mod);
         }
     }
