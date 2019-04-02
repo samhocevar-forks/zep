@@ -7,6 +7,7 @@
 #include "mode.cpp"
 #include "mode_standard.cpp"
 #include "mode_vim.cpp"
+#include "mode_search.cpp"
 #include "scroller.cpp"
 #include "splits.cpp"
 #include "syntax.cpp"
@@ -14,21 +15,11 @@
 #include "syntax_rainbow_brackets.cpp"
 #include "tab_window.cpp"
 #include "theme.cpp"
+#include "display.cpp"
 #include "window.cpp"
-#include "mcommon/file/file.cpp"
+#include "filesystem.cpp"
+#include "mcommon/file/path.cpp"
 #include "mcommon/file/archive.cpp"
-
-#ifdef ZEP_FEATURE_FILE_WATCHER
-#include "mcommon/FileWatcher/FileWatcher.cpp"
-#if defined(_WIN32)
-#include "mcommon/FileWatcher/FileWatcherWin32.cpp"
-#elif defined(__APPLE_CC__) || defined(BSD)
-#include "mcommon/FileWatcher/FileWatcherOSX.cpp"
-#elif defined(__linux__)
-#include "mcommon/FileWatcher/FileWatcherLinux.cpp"
-#endif
-#endif
-
 #include "mcommon/string/stringutils.cpp"
 #include "mcommon/animation/timer.cpp"
 #ifdef ZEP_QT
@@ -38,11 +29,14 @@
 #include "imgui/display_imgui.cpp"
 #include "imgui/editor_imgui.cpp"
 #endif
+
 #else
 #include "editor.h"
 #include "syntax.h"
 #include "buffer.h"
 #include "tab_window.h"
+#include "mode_vim.h"
+#include "mode_standard.h"
 #include "window.h"
 #include "mode.h"
 #ifdef ZEP_QT

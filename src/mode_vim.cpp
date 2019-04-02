@@ -4,6 +4,7 @@
 #include "buffer.h"
 #include "commands.h"
 #include "mode_vim.h"
+#include "mode_search.h"
 #include "tab_window.h"
 #include "mcommon/string/stringutils.h"
 #include "mcommon/animation/timer.h"
@@ -320,7 +321,7 @@ void ZepMode_Vim::SwitchMode(EditorMode mode)
     if (mode == EditorMode::None)
         return;
 
-    if (mode == EditorMode::Insert && GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::Locked))
+    if (mode == EditorMode::Insert && GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::NotModifiable))
     {
         mode = EditorMode::Normal;
     }
@@ -476,7 +477,7 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
             {
                 if (strTok[1] == "%")
                 {
-                    pTab->AddWindow(&GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer(), nullptr, true);
+                    pTab->AddWindow(&buffer, nullptr, true);
                 }
                 else
                 {
@@ -652,23 +653,46 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 {
                     std::string displayText = editor_buffer->GetName();
                     displayText = string_replace(displayText, "\n", "^J");
+
+                    std::ostringstream strFlags;
                     if (&GetCurrentWindow()->GetBuffer() == editor_buffer.get())
                     {
-                        str << "*";
+                        strFlags << "%";
                     }
-                    else
+
+                    auto wins = GetEditor().GetBufferWindows(*editor_buffer);
+                    if (wins.empty())
                     {
-                        str << " ";
+                        strFlags << "h";
                     }
+
                     if (editor_buffer->TestFlags(FileFlags::Dirty))
                     {
-                        str << "+";
+                        strFlags << "+";
                     }
-                    else
+
+                    if (editor_buffer->TestFlags(FileFlags::NotModifiable))
                     {
-                        str << " ";
+                        strFlags << "-";
                     }
-                    str << index++ << " : " << displayText << '\n';
+
+                    if (editor_buffer->TestFlags(FileFlags::ReadOnly))
+                    {
+                        strFlags << "=";
+                    }
+
+                    str << index++ << " " << strFlags.str();
+                  
+                    // TODO: A little helper class to format things like this
+                    const int bufferTab = 8;
+                    int pad = bufferTab - (int)strFlags.str().length();
+                    while (pad > 0)
+                    {
+                        // Pad out in case flags above weren't shown
+                        str << " ";
+                        pad--;
+                    }
+                    str << displayText << std::endl;
                 }
             }
             GetEditor().SetCommandText(str.str());
@@ -713,8 +737,23 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
     auto bufferCursor = GetCurrentWindow()->GetBufferCursor();
     auto& buffer = GetCurrentWindow()->GetBuffer();
 
+    // CTRL + keys common to modes
+    bool needMoreChars = false;
+    if ((context.modifierKeys & ModifierKey::Ctrl) &&
+        HandleGlobalCtrlCommand(context.command, context.modifierKeys, needMoreChars))
+    {
+        if (needMoreChars)
+        {
+            context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
     // Motion
-    if (context.command == "$")
+    else if (context.command == "$")
     {
         GetCurrentWindow()->SetBufferCursor(context.buffer.GetLinePos(bufferCursor, LineLocation::LineLastNonCR));
         return true;
@@ -738,27 +777,6 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
     else if (context.command == "L" && (context.modifierKeys & ModifierKey::Shift))
     {
         GetEditor().NextTabWindow();
-        return true;
-    }
-    // Moving between splits
-    else if (context.command == "j" && (context.modifierKeys & ModifierKey::Ctrl))
-    {
-        GetCurrentWindow()->GetTabWindow().DoMotion(WindowMotion::Down);
-        return true;
-    }
-    else if (context.command == "k" && (context.modifierKeys & ModifierKey::Ctrl))
-    {
-        GetCurrentWindow()->GetTabWindow().DoMotion(WindowMotion::Up);
-        return true;
-    }
-    else if (context.command == "h" && (context.modifierKeys & ModifierKey::Ctrl))
-    {
-        GetCurrentWindow()->GetTabWindow().DoMotion(WindowMotion::Left);
-        return true;
-    }
-    else if (context.command == "l" && (context.modifierKeys & ModifierKey::Ctrl))
-    {
-        GetCurrentWindow()->GetTabWindow().DoMotion(WindowMotion::Right);
         return true;
     }
     else if (context.command == "j" || context.command == "+" || context.lastKey == ExtKeys::DOWN)

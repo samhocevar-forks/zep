@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mcommon/file/file.h"
+#include "mcommon/file/path.h"
 #include "editor.h"
 #include "theme.h"
 
@@ -39,11 +39,17 @@ enum : uint32_t
     StrippedCR = (1 << 0),
     TerminatedWithZero = (1 << 1),
     ReadOnly = (1 << 2),
-    Locked = (1 << 3), // Can this file path ever be written to?
+    NotModifiable = (1 << 3), // Can this file path ever be written to?
     Dirty = (1 << 4),  // Has the file been changed?
     NotYetSaved = (1 << 5),
     FirstInit = (1 << 6)
 };
+};
+
+enum class BufferType
+{
+    Normal,
+    Search
 };
 
 enum class LineLocation
@@ -96,11 +102,11 @@ public:
     ZepBuffer(ZepEditor& editor, const std::string& strName);
     virtual ~ZepBuffer();
     void SetText(const std::string& strText);
-    void Load(const fs::path& path);
+    void Load(const ZepPath& path);
     bool Save(int64_t& size);
 
-    fs::path GetFilePath() const;
-    void SetFilePath(const fs::path& path);
+    ZepPath GetFilePath() const;
+    void SetFilePath(const ZepPath& path);
 
     BufferLocation Search(const std::string& str, BufferLocation start, SearchDirection dir = SearchDirection::Forward, BufferLocation end = BufferLocation{-1l}) const;
 
@@ -196,6 +202,12 @@ public:
     void ClearRangeMarkers();
     const tRangeMarkers& GetRangeMarkers() const;
 
+    void SetBufferType(BufferType type);
+    BufferType GetBufferType() const;
+
+    void SetLastLocation(BufferLocation loc);
+    BufferLocation GetLastLocation() const;
+
 private:
     // Internal
     GapBuffer<utf8>::const_iterator SearchWord(uint32_t searchType, GapBuffer<utf8>::const_iterator itrBegin, GapBuffer<utf8>::const_iterator itrEnd, SearchDirection dir) const;
@@ -210,13 +222,15 @@ private:
     GapBuffer<utf8> m_gapBuffer;  // Storage for the text - a gap buffer for efficiency
     std::vector<long> m_lineEnds; // End of each line
     uint32_t m_fileFlags = FileFlags::NotYetSaved | FileFlags::FirstInit;
+    BufferType m_bufferType = BufferType::Normal;
     std::shared_ptr<ZepSyntax> m_spSyntax;
     std::string m_strName;
-    fs::path m_filePath;
+    ZepPath m_filePath;
     std::shared_ptr<ZepTheme> m_spOverrideTheme;
 
     BufferRange m_selection;
     tRangeMarkers m_rangeMarkers;
+    BufferLocation m_lastLocation{0};
 };
 
 // Notification payload

@@ -8,11 +8,14 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "zep_config.h"
+
 #include "mcommon/math/math.h"
 #include "mcommon/animation/timer.h"
-#include "mcommon/file/file.h"
 #include "mcommon/file/archive.h"
 #include "mcommon/threadpool.h"
+#include "mcommon/file/path.h"
+
 #include "splits.h"
 
 // Basic Architecture
@@ -46,7 +49,8 @@ class ZepTabWindow;
 class ZepWindow;
 class ZepTheme;
 
-class IZepDisplay;
+class ZepDisplay;
+class IZepFileSystem;
 
 struct Region;
 
@@ -57,7 +61,7 @@ namespace ZepEditorFlags
 enum
 {
     None = (0),
-    DisableThreads = (1 << 0)
+    DisableThreads = (1 << 0),
 };
 };
 
@@ -176,15 +180,20 @@ class ZepEditor
 {
 public:
     // Root path is the path to search for a config file
-    ZepEditor(IZepDisplay* pDisplay, const fs::path& root, uint32_t flags = 0);
+    ZepEditor(ZepDisplay* pDisplay, const ZepPath& root, uint32_t flags = 0, IZepFileSystem* pFileSystem = nullptr);
     ~ZepEditor();
 
-    void LoadConfig(const fs::path& config_path);
+    void LoadConfig(const ZepPath& config_path);
     void Quit();
 
-    void InitWithFileOrDir(const std::string& str);
+    ZepBuffer* InitWithFileOrDir(const std::string& str);
+    ZepBuffer* InitWithText(const std::string& strName, const std::string& strText);
 
     ZepMode* GetCurrentMode() const;
+    void BeginSecondaryMode(std::shared_ptr<ZepMode> spSecondaryMode);
+    void EndSecondaryMode();
+    ZepMode* GetSecondaryMode() const;
+
     void Display();
 
     void RegisterMode(std::shared_ptr<ZepMode> spMode);
@@ -205,8 +214,10 @@ public:
     const tBuffers& GetBuffers() const;
     ZepBuffer* GetMRUBuffer() const;
     void SaveBuffer(ZepBuffer& buffer);
-    ZepBuffer* GetFileBuffer(const fs::path& filePath, uint32_t fileFlags = 0);
+    ZepBuffer* GetFileBuffer(const ZepPath& filePath, uint32_t fileFlags = 0, bool create = true);
     ZepBuffer* GetEmptyBuffer(const std::string& name, uint32_t fileFlags = 0);
+    void RemoveBuffer(ZepBuffer* pBuffer);
+    std::vector<ZepWindow*> GetBufferWindows(const ZepBuffer& buffer) const;
 
     void SetRegister(const std::string& reg, const Register& val);
     void SetRegister(const char reg, const Register& val);
@@ -251,9 +262,14 @@ public:
     void SetDisplayRegion(const NVec2f& topLeft, const NVec2f& bottomRight);
     void UpdateSize();
 
-    IZepDisplay& GetDisplay() const
+    ZepDisplay& GetDisplay() const
     {
         return *m_pDisplay;
+    }
+    
+    IZepFileSystem& GetFileSystem() const
+    {
+        return *m_pFileSystem;
     }
 
     ZepTheme& GetTheme() const;
@@ -276,12 +292,20 @@ public:
 
     ThreadPool& GetThreadPool() const;
 
+    // Used to inform when a file changes - called from outside zep by the platform specific code, if possible
+    virtual void OnFileChanged(const ZepPath& path);
+
 private:
     // Call GetBuffer publicly, to stop creation of duplicate buffers refering to the same file
     ZepBuffer* CreateNewBuffer(const std::string& bufferName);
 
+    // Ensure there is a valid tab window and return it
+    ZepTabWindow* EnsureTab();
+
 private:
-    IZepDisplay* m_pDisplay;
+    ZepDisplay* m_pDisplay;
+    IZepFileSystem* m_pFileSystem;
+
     std::set<IZepComponent*> m_notifyClients;
     mutable tRegisters m_registers;
 
@@ -297,6 +321,7 @@ private:
 
     // Active mode
     ZepMode* m_pCurrentMode = nullptr;
+    std::shared_ptr<ZepMode> m_spSecondaryMode;
 
     // Tab windows
     tTabWindows m_tabWindows;
@@ -318,16 +343,16 @@ private:
     std::shared_ptr<Region> m_tabRegion;
     std::map<ZepTabWindow*, NRectf> m_tabRects;
     bool m_bRegionsChanged = false;
-    fs::path m_currentRootPath;
 
     NVec2f m_mousePos;
     float m_pixelScale = 1.0f;
-    fs::path m_rootPath;
+    ZepPath m_rootPath;
 
     // Config
     uint32_t m_showScrollBar = 1;
 
     std::unique_ptr<ThreadPool> m_threadPool;
+
 };
 
 } // namespace Zep

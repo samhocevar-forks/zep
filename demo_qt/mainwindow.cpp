@@ -58,8 +58,7 @@ MainWindow::MainWindow()
     }
     else
     {
-        ZepBuffer* pBuffer = pWidget->GetEditor().GetEmptyBuffer("shader.vert");
-        pBuffer->SetText(shader.c_str());
+        pWidget->GetEditor().InitWithText("Shader.vert", shader);
     }
 
     //setStyleSheet("background-color: darkBlue");
@@ -67,7 +66,7 @@ MainWindow::MainWindow()
     setContentsMargins(2, 2, 2, 2);
 
     auto menu = new QMenuBar();
-    auto pFile = menu->addMenu("File");
+    //auto pFile = menu->addMenu("File");
     auto pSettings = menu->addMenu("Settings");
     {
         auto pMode = pSettings->addMenu("Editor Mode");
@@ -76,7 +75,6 @@ MainWindow::MainWindow()
             auto pStandard = pMode->addAction("Standard");
 
             bool enabledVim = strcmp(pWidget->GetEditor().GetCurrentMode()->Name(), Zep::ZepMode_Vim::StaticName()) == 0;
-            bool enabledNormal = !enabledVim;
             pVim->setCheckable(true);
             pStandard->setCheckable(true);
             pVim->setChecked(enabledVim);
@@ -99,7 +97,6 @@ MainWindow::MainWindow()
             auto pLight = pTheme->addAction("Light");
 
             bool enabledDark = pWidget->GetEditor().GetTheme().GetThemeType() == ThemeType::Dark ? true : false;
-            bool enabledLight = !enabledDark;
             pDark->setCheckable(true);
             pLight->setCheckable(true);
             pDark->setChecked(enabledDark);
