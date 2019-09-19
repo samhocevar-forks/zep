@@ -582,8 +582,8 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
         // Note: We don't really support UTF8, but our whitespace symbol is UTF8!
         const utf8* pEnd = pCh + UTF8_CHAR_LEN(*pCh);
 
-        // If this is a PICO-8 glyph, override the operation above
-        if (*pCh >= 0x80 && *pCh <= 0x99)
+        // If this is a PICO-8 high-bit glyph, override the operation above
+        if (*pCh >= 0x80)
             pEnd = pCh + 1;
 
         auto textSize = display.GetTextSize(pCh, pEnd);
@@ -689,7 +689,7 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
 
                 // PICO-8 glyph support and uppercase/lowercase swap
                 utf8 tmp[2];
-                if (*pCh >= 0x80 && *pCh <= 0x99)
+                if (*pCh >= 0x80)
                 {
                     tmp[0] = '\xc2';
                     tmp[1] = *pCh;

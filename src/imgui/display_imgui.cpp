@@ -32,7 +32,7 @@ NVec2f ZepDisplay_ImGui::GetTextSize(const utf8* pBegin, const utf8* pEnd) const
 
     // If our character is non-ASCII, convert it to UTF-8
     utf8 tmp[2];
-    if (*pBegin >= 0x80 && *pBegin <= 0x99)
+    if (*pBegin >= 0x80)
     {
         tmp[0] = (utf8)'\xc2';
         tmp[1] = *pBegin;
