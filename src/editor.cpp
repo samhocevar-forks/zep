@@ -1,23 +1,23 @@
-#include "editor.h"
-#include "buffer.h"
-#include "display.h"
-#include "mode_standard.h"
-#include "mode_vim.h"
-#include "syntax.h"
-#include "syntax_providers.h"
-#include "tab_window.h"
-#include "theme.h"
-#include "filesystem.h"
+#include "zep/editor.h"
+#include "zep/buffer.h"
+#include "zep/display.h"
+#include "zep/mode_standard.h"
+#include "zep/mode_vim.h"
+#include "zep/syntax.h"
+#include "zep/syntax_providers.h"
+#include "zep/tab_window.h"
+#include "zep/theme.h"
+#include "zep/filesystem.h"
+#include "zep/window.h"
 
-#include "mcommon/file/path.h"
-#include "mcommon/string/stringutils.h"
-#include "mcommon/animation/timer.h"
-#include "mcommon/logger.h"
-#include "mcommon/file/archive.h"
-#include "mcommon/string/stringutils.h"
-#include "mcommon/string/murmur_hash.h"
+#include "zep/mcommon/file/path.h"
+#include "zep/mcommon/string/stringutils.h"
+#include "zep/mcommon/animation/timer.h"
+#include "zep/mcommon/logger.h"
+#include "zep/mcommon/file/cpptoml.h"
+#include "zep/mcommon/string/stringutils.h"
+#include "zep/mcommon/string/murmur_hash.h"
 
-#include "window.h"
 #include <stdexcept>
 
 namespace Zep
@@ -113,8 +113,8 @@ void ZepEditor::OnFileChanged(const ZepPath& path)
     {
         if (m_spConfig)
         {
-            LOG(INFO) << "Reloading global vars";
-            archive_reload(*m_spConfig, GetFileSystem().Read(m_spConfig->path));
+            LOG(INFO) << "Reloading config";
+            LoadConfig(path);
             Broadcast(std::make_shared<ZepMessage>(Msg::ConfigChanged));
         }
     }
@@ -128,11 +128,34 @@ void ZepEditor::LoadConfig(const ZepPath& config_path)
     {
         return;
     }
+
+    try
+    {
+        m_spConfig = cpptoml::parse_file(config_path.string());
+        if (m_spConfig == nullptr)
+            return;
+
+        m_showScrollBar = m_spConfig->get_qualified_as<uint32_t>("editor.show_scrollbar").value_or(1);
+    }
+    catch (cpptoml::parse_exception& ex)
+    {
+        std::ostringstream str;
+        str << config_path.filename().string() << " : Failed to parse. " << ex.what();
+        SetCommandText(str.str());
+    }
+    catch (...)
+    {
+        std::ostringstream str;
+        str << config_path.filename().string() << " : Failed to parse. ";
+        SetCommandText(str.str());
+    }
+    /*
     m_spConfig = archive_load(config_path, GetFileSystem().Read(config_path));
     if (m_spConfig)
     {
         archive_bind(*m_spConfig, "editor", "show_scrollbar", m_showScrollBar);
     }
+    */
 }
 
 void ZepEditor::SaveBuffer(ZepBuffer& buffer)
@@ -146,7 +169,7 @@ void ZepEditor::SaveBuffer(ZepBuffer& buffer)
     {
         strText << "Failed to save, Read Only: " << buffer.GetDisplayName();
     }
-    else if (buffer.TestFlags(FileFlags::NotModifiable))
+    else if (buffer.TestFlags(FileFlags::Locked))
     {
         strText << "Failed to save, Locked: " << buffer.GetDisplayName();
     }
@@ -234,35 +257,12 @@ ZepBuffer* ZepEditor::GetFileBuffer(const ZepPath& filePath, uint32_t fileFlags,
         return nullptr;
     }
 
+    // Create buffer, try to load even if not present, the buffer represents the save path (it just isn't saved yet)
     auto pBuffer = CreateNewBuffer(path.has_filename() ? path.filename().string() : path.string());
-    if (GetFileSystem().Exists(path))
-    {
-        pBuffer->Load(path);
-        if (GetFileSystem().IsReadOnly(path))
-        {
-            pBuffer->SetFlags(FileFlags::ReadOnly);
-        }
-    }
+    pBuffer->Load(path);
 
     pBuffer->SetFlags(fileFlags, true);
     return pBuffer;
-}
-
-std::vector<ZepWindow*> ZepEditor::GetBufferWindows(const ZepBuffer& buffer) const
-{
-    std::vector<ZepWindow*> windows;
-
-    for (auto& tab : m_tabWindows)
-    {
-        for (auto& win : tab->GetWindows())
-        {
-            if (&win->GetBuffer() == &buffer)
-            {
-                windows.push_back(win);
-            }
-        }
-    }
-    return windows;
 }
 
 ZepTabWindow* ZepEditor::EnsureTab()
@@ -477,6 +477,7 @@ ZepMode* ZepEditor::GetSecondaryMode() const
 
 ZepMode* ZepEditor::GetCurrentMode()
 {
+    // The 'Mode' is typically vim or normal and determines how editing is done in a panel
     if (!m_pCurrentMode && !m_mapModes.empty())
     {
         m_pCurrentMode = m_mapModes.begin()->second.get();
@@ -699,7 +700,11 @@ void ZepEditor::UpdateSize()
     m_tabContentRegion->flags = RegionFlags::Expanding;
 
     LayoutRegion(*m_editorRegion);
-    GetActiveTabWindow()->SetDisplayRegion(m_tabContentRegion->rect);
+
+    if (GetActiveTabWindow())
+    {
+        GetActiveTabWindow()->SetDisplayRegion(m_tabContentRegion->rect);
+    }
 }
 
 void ZepEditor::Display()
@@ -812,6 +817,18 @@ void ZepEditor::SetPixelScale(float scale)
 float ZepEditor::GetPixelScale() const
 {
     return m_pixelScale;
+}
+
+void ZepEditor::SetLineSpace(int lineSpace)
+{
+    m_lineSpace = lineSpace;
+    for (auto& pTabWindow : m_tabWindows)
+    {
+        for (auto& pWindow : pTabWindow->GetWindows())
+        {
+            pWindow->UpdateLayout(true);
+        }
+    }
 }
 
 } // namespace Zep

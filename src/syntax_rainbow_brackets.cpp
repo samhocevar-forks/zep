@@ -1,7 +1,8 @@
-#include "syntax_rainbow_brackets.h"
-#include "mcommon/string/stringutils.h"
-#include "theme.h"
-#include "mcommon/logger.h"
+#include "zep/syntax_rainbow_brackets.h"
+#include "zep/theme.h"
+
+#include "zep/mcommon/string/stringutils.h"
+#include "zep/mcommon/logger.h"
 
 // A Simple adornment to add rainbow brackets to the syntax
 namespace Zep
@@ -43,21 +44,27 @@ void ZepSyntaxAdorn_RainbowBrackets::Notify(std::shared_ptr<ZepMessage> spMsg)
     }
 }
 
-NVec4f ZepSyntaxAdorn_RainbowBrackets::GetSyntaxColorAt(long offset, bool& found) const
+SyntaxData ZepSyntaxAdorn_RainbowBrackets::GetSyntaxAt(long offset, bool& found) const
 {
+    SyntaxData data;
     auto itr = m_brackets.find(offset);
     if (itr == m_brackets.end())
     {
         found = false;
-        return NVec4f(1.0f);
+        return data;
     }
 
     found = true;
     if (itr->second.indent < 0)
     {
-        return m_buffer.GetTheme().GetColor(ThemeColor::HiddenText);
+        data.foreground = ThemeColor::HiddenText;
     }
-    return m_buffer.GetTheme().GetUniqueColor(itr->second.indent);
+    else
+    {
+        data.foreground = (ThemeColor)(((int32_t)ThemeColor::UniqueColor0 + itr->second.indent) % (int32_t)ThemeColor::UniqueColorLast);
+    }
+        
+    return data;
 }
 
 void ZepSyntaxAdorn_RainbowBrackets::Insert(long start, long end)

@@ -1,15 +1,16 @@
 #include <cctype>
 #include <sstream>
 
-#include "buffer.h"
-#include "commands.h"
-#include "mode_vim.h"
-#include "mode_search.h"
-#include "tab_window.h"
-#include "mcommon/string/stringutils.h"
-#include "mcommon/animation/timer.h"
-#include "window.h"
-#include "theme.h"
+#include "zep/buffer.h"
+#include "zep/commands.h"
+#include "zep/mode_search.h"
+#include "zep/mode_vim.h"
+#include "zep/tab_window.h"
+#include "zep/theme.h"
+#include "zep/window.h"
+
+#include "zep/mcommon/animation/timer.h"
+#include "zep/mcommon/string/stringutils.h"
 
 // Note:
 // This is a very basic implementation of the common Vim commands that I use: the bare minimum I can live with.
@@ -43,12 +44,13 @@
 // 'y'
 // 'p'/'P'
 // a-z&a-Z, 0->9, _ " registers
+// r Replace with char
 // '$'
 // 'yy'
 // cc
 // c$  Change to end of line
 // C
-// S, s, with visual mode
+// S, s, with visual modes
 // ^
 // 'O', 'o'
 // 'V' (linewise v)
@@ -57,6 +59,8 @@
 // di[({})]"'
 // c[a]<count>w/e  Change word
 // ci[({})]"'
+// ct[char]/dt[char] Change to and delete to
+// vi[Ww], va[Ww] Visual inner and word selections
 
 namespace Zep
 {
@@ -86,8 +90,8 @@ void CommandContext::UpdateRegisters()
 
     if (op == CommandOperation::Delete || op == CommandOperation::DeleteLines)
     {
-        beginRange = std::max(beginRange, BufferLocation{0});
-        endRange = std::max(endRange, BufferLocation{0});
+        beginRange = std::max(beginRange, BufferLocation{ 0 });
+        endRange = std::max(endRange, BufferLocation{ 0 });
         if (beginRange > endRange)
         {
             std::swap(beginRange, endRange);
@@ -114,8 +118,8 @@ void CommandContext::UpdateRegisters()
     }
     else if (op == CommandOperation::Copy || op == CommandOperation::CopyLines)
     {
-        beginRange = std::max(beginRange, BufferLocation{0});
-        endRange = std::max(endRange, BufferLocation{0});
+        beginRange = std::max(beginRange, BufferLocation{ 0 });
+        endRange = std::max(endRange, BufferLocation{ 0 });
         if (beginRange > endRange)
         {
             std::swap(beginRange, endRange);
@@ -160,12 +164,14 @@ void CommandContext::GetCommandAndCount()
 
     // Special case; 'f3' is a find for the character '3', not a count of 3!
     // But 2f3 is 'find the second 3'....
+    // Same thing for 'r'
+    // I need a key mapper with input patterns to sort this out properly
     if (itr != commandText.end())
     {
-        if (*itr == 'f' || *itr == 'F' || *itr == 'c')
+        if (*itr == 'f' || *itr == 'F' || *itr == 'c' || *itr == 'r')
         {
             while (itr != commandText.end()
-                   && std::isgraph(*itr))
+                && std::isgraph(*itr))
             {
                 command1 += *itr;
                 itr++;
@@ -174,7 +180,7 @@ void CommandContext::GetCommandAndCount()
         else
         {
             while (itr != commandText.end()
-                   && std::isgraph(*itr) && !std::isdigit(*itr))
+                && std::isgraph(*itr) && !std::isdigit(*itr))
             {
                 command1 += *itr;
                 itr++;
@@ -186,7 +192,7 @@ void CommandContext::GetCommandAndCount()
     if (command1[0] != '\"' && command1[0] != ':' && command1[0] != '/')
     {
         while (itr != commandText.end()
-               && std::isdigit(*itr))
+            && std::isdigit(*itr))
         {
             count2 += *itr;
             itr++;
@@ -194,7 +200,7 @@ void CommandContext::GetCommandAndCount()
     }
 
     while (itr != commandText.end()
-           && (std::isgraph(*itr) || *itr == ' '))
+        && (std::isgraph(*itr) || *itr == ' '))
     {
         command2 += *itr;
         itr++;
@@ -264,7 +270,7 @@ void CommandContext::GetCommandRegisters()
                 reg = (char)std::tolower((char)reg);
             }
 
-            if (owner.GetEditor().GetRegisters().find(std::string({reg})) != owner.GetEditor().GetRegisters().end())
+            if (owner.GetEditor().GetRegisters().find(std::string({ reg })) != owner.GetEditor().GetRegisters().end())
             {
                 pRegister = &owner.GetEditor().GetRegister(reg);
             }
@@ -321,7 +327,7 @@ void ZepMode_Vim::SwitchMode(EditorMode mode)
     if (mode == EditorMode::None)
         return;
 
-    if (mode == EditorMode::Insert && GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::NotModifiable))
+    if (mode == EditorMode::Insert && GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::Locked))
     {
         mode = EditorMode::Normal;
     }
@@ -329,26 +335,26 @@ void ZepMode_Vim::SwitchMode(EditorMode mode)
     m_currentMode = mode;
     switch (mode)
     {
-        case EditorMode::Normal:
-        {
-            GetCurrentWindow()->SetCursorType(CursorType::Normal);
-            ClampCursorForMode();
-            ResetCommand();
-        }
+    case EditorMode::Normal:
+    {
+        GetCurrentWindow()->SetCursorType(CursorType::Normal);
+        ClampCursorForMode();
+        ResetCommand();
+    }
+    break;
+    case EditorMode::Insert:
+        m_insertBegin = GetCurrentWindow()->GetBufferCursor();
+        GetCurrentWindow()->SetCursorType(CursorType::Insert);
+        m_pendingEscape = false;
         break;
-        case EditorMode::Insert:
-            m_insertBegin = GetCurrentWindow()->GetBufferCursor();
-            GetCurrentWindow()->SetCursorType(CursorType::Insert);
-            m_pendingEscape = false;
-            break;
-        case EditorMode::Visual:
-            GetCurrentWindow()->SetCursorType(CursorType::Visual);
-            ResetCommand();
-            m_pendingEscape = false;
-            break;
-        default:
-        case EditorMode::None:
-            break;
+    case EditorMode::Visual:
+        GetCurrentWindow()->SetCursorType(CursorType::Visual);
+        ResetCommand();
+        m_pendingEscape = false;
+        break;
+    default:
+    case EditorMode::None:
+        break;
     }
 }
 
@@ -357,7 +363,7 @@ bool ZepMode_Vim::GetOperationRange(const std::string& op, EditorMode mode, Buff
     auto& buffer = GetCurrentWindow()->GetBuffer();
     const auto bufferCursor = GetCurrentWindow()->GetBufferCursor();
 
-    beginRange = BufferLocation{-1};
+    beginRange = BufferLocation{ -1 };
     if (op == "visual")
     {
         if (mode == EditorMode::Visual)
@@ -567,6 +573,16 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 GetEditor().GetActiveTabWindow()->CloseActiveWindow();
             }
         }
+        else if (strCommand.find(":ZSetLineSpace") == 0)
+        {
+            int space = 1;
+            auto strTok = string_split(strCommand, " ");
+            if (strTok.size() > 1)
+            {
+                space = std::stoi(strTok[1]);
+            }
+            GetEditor().SetLineSpace(space);
+        }
         else if (strCommand.find(":ZTestMarkers") == 0)
         {
             int markerType = 0;
@@ -589,39 +605,48 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 start = buffer.GetLinePos(bufferCursor, LineLocation::LineFirstGraphChar);
                 end = buffer.GetLinePos(bufferCursor, LineLocation::LineLastGraphChar) + 1;
             }
-            spMarker->range = BufferRange{start, end};
+            spMarker->range = BufferRange{ start, end };
             switch (markerType)
             {
-                case 3:
-                    spMarker->highlightColor = ThemeColor::TabActive;
-                    spMarker->textColor = ThemeColor::Text;
-                    spMarker->name = "Filled Marker";
-                    spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
-                    spMarker->displayType = RangeMarkerDisplayType::Tooltip | RangeMarkerDisplayType::Underline | RangeMarkerDisplayType::Indicator;
-                    break;
-                case 2:
-                    spMarker->highlightColor = ThemeColor::Warning;
-                    spMarker->textColor = ThemeColor::Text;
-                    spMarker->name = "Tooltip";
-                    spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
-                    spMarker->displayType = RangeMarkerDisplayType::Tooltip;
-                    break;
-                case 1:
-                    spMarker->highlightColor = ThemeColor::Warning;
-                    spMarker->textColor = ThemeColor::Text;
-                    spMarker->name = "Warning";
-                    spMarker->description = "This is an example warning mark";
-                    break;
-                case 0:
-                default:
-                    spMarker->highlightColor = ThemeColor::Error;
-                    spMarker->textColor = ThemeColor::Text;
-                    spMarker->name = "Error";
-                    spMarker->description = "This is an example error mark";
+            case 4:
+                spMarker->highlightColor = ThemeColor::Error;
+                spMarker->backgroundColor = ThemeColor::Error;
+                spMarker->textColor = ThemeColor::Text;
+                spMarker->name = "Filled Marker";
+                spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
+                spMarker->displayType = RangeMarkerDisplayType::Tooltip | RangeMarkerDisplayType::Underline | RangeMarkerDisplayType::Indicator | RangeMarkerDisplayType::Background;
+                break;
+            case 3:
+                spMarker->highlightColor = ThemeColor::TabActive;
+                spMarker->textColor = ThemeColor::Text;
+                spMarker->name = "Underline Marker";
+                spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
+                spMarker->displayType = RangeMarkerDisplayType::Tooltip | RangeMarkerDisplayType::Underline | RangeMarkerDisplayType::Indicator;
+                break;
+            case 2:
+                spMarker->highlightColor = ThemeColor::Warning;
+                spMarker->textColor = ThemeColor::Text;
+                spMarker->name = "Tooltip";
+                spMarker->description = "This is an example tooltip\nThey can be added to any range of characters";
+                spMarker->displayType = RangeMarkerDisplayType::Tooltip;
+                break;
+            case 1:
+                spMarker->highlightColor = ThemeColor::Warning;
+                spMarker->textColor = ThemeColor::Text;
+                spMarker->name = "Warning";
+                spMarker->description = "This is an example warning mark";
+                break;
+            case 0:
+            default:
+                spMarker->highlightColor = ThemeColor::Error;
+                spMarker->textColor = ThemeColor::Text;
+                spMarker->name = "Error";
+                spMarker->description = "This is an example error mark";
             }
             buffer.AddRangeMarker(spMarker);
+            SwitchMode(EditorMode::Normal);
         }
-        else if (strCommand == ":ZWhiteSpace")
+        else if (strCommand == ":ZShowCR")
         {
             pWindow->ToggleFlag(WindowFlags::ShowCR);
         }
@@ -653,46 +678,23 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 {
                     std::string displayText = editor_buffer->GetName();
                     displayText = string_replace(displayText, "\n", "^J");
-
-                    std::ostringstream strFlags;
                     if (&GetCurrentWindow()->GetBuffer() == editor_buffer.get())
                     {
-                        strFlags << "%";
+                        str << "*";
                     }
-
-                    auto wins = GetEditor().GetBufferWindows(*editor_buffer);
-                    if (wins.empty())
+                    else
                     {
-                        strFlags << "h";
+                        str << " ";
                     }
-
                     if (editor_buffer->TestFlags(FileFlags::Dirty))
                     {
-                        strFlags << "+";
+                        str << "+";
                     }
-
-                    if (editor_buffer->TestFlags(FileFlags::NotModifiable))
+                    else
                     {
-                        strFlags << "-";
-                    }
-
-                    if (editor_buffer->TestFlags(FileFlags::ReadOnly))
-                    {
-                        strFlags << "=";
-                    }
-
-                    str << index++ << " " << strFlags.str();
-                  
-                    // TODO: A little helper class to format things like this
-                    const int bufferTab = 8;
-                    int pad = bufferTab - (int)strFlags.str().length();
-                    while (pad > 0)
-                    {
-                        // Pad out in case flags above weren't shown
                         str << " ";
-                        pad--;
                     }
-                    str << displayText << std::endl;
+                    str << index++ << " : " << displayText << '\n';
                 }
             }
             GetEditor().SetCommandText(str.str());
@@ -739,8 +741,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
 
     // CTRL + keys common to modes
     bool needMoreChars = false;
-    if ((context.modifierKeys & ModifierKey::Ctrl) &&
-        HandleGlobalCtrlCommand(context.command, context.modifierKeys, needMoreChars))
+    if ((context.modifierKeys & ModifierKey::Ctrl) && HandleGlobalCtrlCommand(context.command, context.modifierKeys, needMoreChars))
     {
         if (needMoreChars)
         {
@@ -933,7 +934,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         }
         else if (context.command == "gg")
         {
-            GetCurrentWindow()->SetBufferCursor(BufferLocation{0});
+            GetCurrentWindow()->SetBufferCursor(BufferLocation{ 0 });
             return true;
         }
     }
@@ -985,7 +986,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
             {
                 context.beginRange = loc;
                 context.endRange = std::min(context.buffer.GetLinePos(loc, LineLocation::LineCRBegin),
-                                            context.buffer.LocationFromOffsetByChars(loc, context.count));
+                    context.buffer.LocationFromOffsetByChars(loc, context.count));
                 context.op = CommandOperation::Delete;
                 context.commandResult.flags |= CommandResultFlags::HandledCount;
             }
@@ -1091,6 +1092,48 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
             {
                 context.op = CommandOperation::Delete;
             }
+        }
+        else if (context.command.find("dt") == 0)
+        {
+            if (context.command.length() == 3)
+            {
+                context.beginRange = bufferCursor;
+                context.endRange = buffer.FindOnLineMotion(bufferCursor, (const utf8*)&context.command[2], SearchDirection::Forward);
+                context.op = CommandOperation::Delete;
+            }
+            else
+            {
+                context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
+            }
+        }
+    }
+    else if (context.command[0] == 'r')
+    {
+        if (context.command.size() == 1)
+        {
+            context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
+        }
+        else
+        {
+            context.commandResult.flags |= CommandResultFlags::HandledCount;
+
+            if (!buffer.InsideBuffer(bufferCursor + context.count))
+            {
+                // Outside the valid buffer; an invalid replace with count!
+                return true;
+            }
+
+            context.op = CommandOperation::Replace;
+            context.tempReg.text = context.command[1];
+            context.pRegister = &context.tempReg;
+
+            // Get the range from visual, or use the cursor location
+            if (!GetOperationRange("visual", context.mode, context.beginRange, context.endRange))
+            {
+                context.beginRange = bufferCursor;
+                context.endRange = buffer.LocationFromOffsetByChars(bufferCursor, context.count);
+            }
+            context.commandResult.modeSwitch = EditorMode::Normal;
         }
     }
     // Substitute
@@ -1300,17 +1343,89 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         Redo();
         return true;
     }
-    else if (context.command == "i")
+    else if (context.command[0] == 'i')
     {
-        context.commandResult.modeSwitch = EditorMode::Insert;
-        return true;
+        if (m_currentMode == EditorMode::Visual)
+        {
+            if (context.command.size() < 2)
+            {
+                context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
+            }
+            else
+            {
+                if (context.command[1] == 'W')
+                {
+                    if (GetOperationRange("iW", context.mode, context.beginRange, context.endRange))
+                    {
+                        m_visualBegin = context.beginRange;
+                        m_visualEnd = context.endRange;
+                        GetCurrentWindow()->SetBufferCursor(m_visualEnd - 1);
+                        UpdateVisualSelection();
+                        return true;
+                    }
+                    return true;
+                }
+                else if (context.command[1] == 'w')
+                {
+                    if (GetOperationRange("iw", context.mode, context.beginRange, context.endRange))
+                    {
+                        m_visualBegin = context.beginRange;
+                        m_visualEnd = context.endRange;
+                        GetCurrentWindow()->SetBufferCursor(m_visualEnd - 1);
+                        UpdateVisualSelection();
+                        return true;
+                    }
+                }
+            }
+        }
+        else
+        {
+            context.commandResult.modeSwitch = EditorMode::Insert;
+            return true;
+        }
     }
-    else if (context.command == "a")
+    else if (context.command[0] == 'a')
     {
-        // Cursor append
-        GetCurrentWindow()->SetBufferCursor(context.bufferCursor + 1);
-        context.commandResult.modeSwitch = EditorMode::Insert;
-        return true;
+        if (m_currentMode == EditorMode::Visual)
+        {
+            if (context.command.size() < 2)
+            {
+                context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
+            }
+            else
+            {
+                if (context.command[1] == 'W')
+                {
+                    if (GetOperationRange("aW", context.mode, context.beginRange, context.endRange))
+                    {
+                        m_visualBegin = context.beginRange;
+                        m_visualEnd = context.endRange;
+                        GetCurrentWindow()->SetBufferCursor(m_visualEnd - 1);
+                        UpdateVisualSelection();
+                        return true;
+                    }
+                    return true;
+                }
+                else if (context.command[1] == 'w')
+                {
+                    if (GetOperationRange("aw", context.mode, context.beginRange, context.endRange))
+                    {
+                        m_visualBegin = context.beginRange;
+                        m_visualEnd = context.endRange;
+                        GetCurrentWindow()->SetBufferCursor(m_visualEnd - 1);
+                        UpdateVisualSelection();
+                        return true;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Cursor append
+            GetCurrentWindow()->SetBufferCursor(context.bufferCursor + 1);
+            context.commandResult.modeSwitch = EditorMode::Insert;
+            return true;
+        }
     }
     else if (context.command == "A")
     {
@@ -1398,6 +1513,18 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         context.commandResult.spCommand = std::static_pointer_cast<ZepCommand>(cmd);
         return true;
     }
+    else if (context.op == CommandOperation::Replace && !context.pRegister->text.empty())
+    {
+        auto cmd = std::make_shared<ZepCommand_ReplaceRange>(
+            context.buffer,
+            context.beginRange,
+            context.endRange,
+            context.pRegister->text,
+            context.bufferCursor,
+            context.cursorAfterOverride);
+        context.commandResult.spCommand = std::static_pointer_cast<ZepCommand>(cmd);
+        return true;
+    }
     else if (context.op == CommandOperation::Copy || context.op == CommandOperation::CopyLines)
     {
         // Copy commands keep the cursor at the beginning
@@ -1436,7 +1563,7 @@ void ZepMode_Vim::UpdateVisualSelection()
         {
             m_visualEnd = GetCurrentWindow()->GetBuffer().LocationFromOffsetByChars(GetCurrentWindow()->GetBufferCursor(), 1);
         }
-        GetCurrentWindow()->GetBuffer().SetSelection(BufferRange{m_visualBegin, m_visualEnd});
+        GetCurrentWindow()->GetBuffer().SetSelection(BufferRange{ m_visualBegin, m_visualEnd });
     }
 }
 void ZepMode_Vim::AddKeyPress(uint32_t key, uint32_t modifierKeys)
@@ -1598,19 +1725,19 @@ void ZepMode_Vim::HandleInsert(uint32_t key)
     bool packCommand = false;
     switch (key)
     {
-        case ExtKeys::ESCAPE:
-        case ExtKeys::BACKSPACE:
-        case ExtKeys::DEL:
-        case ExtKeys::RIGHT:
-        case ExtKeys::LEFT:
-        case ExtKeys::UP:
-        case ExtKeys::DOWN:
-        case ExtKeys::PAGEUP:
-        case ExtKeys::PAGEDOWN:
-            packCommand = true;
-            break;
-        default:
-            break;
+    case ExtKeys::ESCAPE:
+    case ExtKeys::BACKSPACE:
+    case ExtKeys::DEL:
+    case ExtKeys::RIGHT:
+    case ExtKeys::LEFT:
+    case ExtKeys::UP:
+    case ExtKeys::DOWN:
+    case ExtKeys::PAGEUP:
+    case ExtKeys::PAGEDOWN:
+        packCommand = true;
+        break;
+    default:
+        break;
     }
 
     if (m_pendingEscape)

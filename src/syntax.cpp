@@ -1,15 +1,16 @@
-#include "syntax.h"
-#include "editor.h"
-#include "syntax_rainbow_brackets.h"
-#include "theme.h"
-#include "mcommon/string/stringutils.h"
+#include "zep/syntax.h"
+#include "zep/editor.h"
+#include "zep/syntax_rainbow_brackets.h"
+#include "zep/theme.h"
+
+#include "zep/mcommon/logger.h"
+#include "zep/mcommon/string/stringutils.h"
 
 #include <string>
 #include <vector>
 
 namespace Zep
 {
-
 
 ZepSyntax::ZepSyntax(
     ZepBuffer& buffer,
@@ -25,7 +26,6 @@ ZepSyntax::ZepSyntax(
 {
     m_syntax.resize(m_buffer.GetText().size());
     m_adornments.push_back(std::make_shared<ZepSyntaxAdorn_RainbowBrackets>(*this, m_buffer));
-    QueueUpdateSyntax(0, BufferLocation(m_buffer.GetText().size()));
 }
 
 ZepSyntax::~ZepSyntax()
@@ -33,35 +33,23 @@ ZepSyntax::~ZepSyntax()
     Interrupt();
 }
 
-NVec4f ZepSyntax::GetSyntaxColorAt(long offset) const
+SyntaxData ZepSyntax::GetSyntaxAt(long offset) const
 {
     Wait();
-    if (m_processedChar < offset || ((long)m_syntax.size()) <= offset)
+    if (m_processedChar < offset || (long)m_syntax.size() <= offset)
     {
-        return m_buffer.GetTheme().GetColor(ThemeColor::Normal);
+        return SyntaxData{};
     }
 
     for (auto& adorn : m_adornments)
     {
         bool found = false;
-        auto col = adorn->GetSyntaxColorAt(offset, found);
+        auto data = adorn->GetSyntaxAt(offset, found);
         if (found)
         {
-            return col;
+            return data;
         }
     }
-
-    return m_buffer.GetTheme().GetColor(m_syntax[offset]);
-}
-
-ThemeColor ZepSyntax::GetSyntaxAt(long offset) const
-{
-    Wait();
-    if (m_processedChar < offset || (long)m_syntax.size() <= offset)
-    {
-        return ThemeColor::Normal;
-    }
-
     return m_syntax[offset];
 }
 
@@ -97,7 +85,7 @@ void ZepSyntax::QueueUpdateSyntax(BufferLocation startLocation, BufferLocation e
 
     // Make sure the syntax buffer is big enough - adding normal syntax to the end
     // This may also 'chop'
-    m_syntax.resize(m_buffer.GetText().size(), ThemeColor::Normal);
+    m_syntax.resize(m_buffer.GetText().size(), SyntaxData{});
 
     m_processedChar = std::min(long(m_processedChar), long(m_buffer.GetText().size() - 1));
     m_targetChar = std::min(long(m_targetChar), long(m_buffer.GetText().size() - 1));
@@ -105,7 +93,7 @@ void ZepSyntax::QueueUpdateSyntax(BufferLocation startLocation, BufferLocation e
     // Have the thread update the syntax in the new region
     // If the pool has no threads, this will end up serial
     m_syntaxResult = GetEditor().GetThreadPool().enqueue([=]() {
-            UpdateSyntax();
+        UpdateSyntax();
     });
 }
 
@@ -132,10 +120,15 @@ void ZepSyntax::Notify(std::shared_ptr<ZepMessage> spMsg)
         else if (spBufferMsg->type == BufferMessageType::TextAdded)
         {
             Interrupt();
-            m_syntax.insert(m_syntax.begin() + spBufferMsg->startLocation, spBufferMsg->endLocation - spBufferMsg->startLocation, ThemeColor::Normal);
+            m_syntax.insert(m_syntax.begin() + spBufferMsg->startLocation, spBufferMsg->endLocation - spBufferMsg->startLocation, SyntaxData{});
             QueueUpdateSyntax(spBufferMsg->startLocation, spBufferMsg->endLocation);
         }
         else if (spBufferMsg->type == BufferMessageType::TextChanged)
+        {
+            Interrupt();
+            QueueUpdateSyntax(spBufferMsg->startLocation, spBufferMsg->endLocation);
+        }
+        else if (spBufferMsg->type == BufferMessageType::Initialized)
         {
             Interrupt();
             QueueUpdateSyntax(spBufferMsg->startLocation, spBufferMsg->endLocation);
@@ -178,11 +171,11 @@ void ZepSyntax::UpdateSyntax()
 
     // Mark a region of the syntax buffer with the correct marker
     auto mark = [&](GapBuffer<utf8>::const_iterator itrA, GapBuffer<utf8>::const_iterator itrB, ThemeColor type) {
-        std::fill(m_syntax.begin() + (itrA - buffer.begin()), m_syntax.begin() + (itrB - buffer.begin()), type);
+        std::fill(m_syntax.begin() + (itrA - buffer.begin()), m_syntax.begin() + (itrB - buffer.begin()), SyntaxData{ type });
     };
 
     auto markSingle = [&](GapBuffer<utf8>::const_iterator itrA, ThemeColor type) {
-        *(m_syntax.begin() + (itrA - buffer.begin())) = type;
+        (m_syntax.begin() + (itrA - buffer.begin()))->foreground = type;
     };
 
     // Update start location
@@ -243,20 +236,40 @@ void ZepSyntax::UpdateSyntax()
             mark(itrFirst, itrLast, ThemeColor::Normal);
         }
 
-        std::string stringStr = "\"";
-        auto itrString = buffer.find_first_of(itrFirst, itrLast, stringStr.begin(), stringStr.end());
-        if (itrString != buffer.end())
-        {
-            auto itrStringStart = itrString++;
-            if (itrString < buffer.end())
+        // Find String
+        auto findString = [&](utf8 ch) {
+            auto itrString = itrFirst;
+            if (*itrString == ch)
             {
-                itrLast = buffer.find_first_of(itrString, buffer.end(), stringStr.begin(), stringStr.end());
-                if (itrLast < buffer.end())
+                itrString++;
+
+                while (itrString < buffer.end())
                 {
-                    mark(itrStringStart, ++itrLast, ThemeColor::String);
+                    // handle end of string
+                    if (*itrString == ch)
+                    {
+                        itrString++;
+                        mark(itrFirst, itrString, ThemeColor::String);
+                        itrLast = itrString + 1;
+                        break;
+                    }
+
+                    if (itrString < (buffer.end() - 1))
+                    {
+                        auto itrNext = itrString + 1;
+                        // Ignore quoted
+                        if (*itrString == '\\' && *itrNext == ch)
+                        {
+                            itrString++;
+                        }
+                    }
+
+                    itrString++;
                 }
             }
-        }
+        };
+        findString('\"');
+        findString('\'');
 
         std::string commentStr = "-";
         auto itrComment = buffer.find_first_of(itrFirst, itrLast, commentStr.begin(), commentStr.end());
@@ -272,7 +285,7 @@ void ZepSyntax::UpdateSyntax()
                 }
             }
         }
-        
+
         itrCurrent = itrLast;
     }
 

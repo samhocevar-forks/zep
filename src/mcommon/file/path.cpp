@@ -1,10 +1,10 @@
-#include "path.h"
+#include "zep/mcommon/file/path.h"
 
 namespace Zep
 {
 
 // http://stackoverflow.com/a/29221546/18942
-ZepPath path_get_relative(const ZepPath& from, ZepPath& to)
+ZepPath path_get_relative(const ZepPath& from, const ZepPath& to)
 {
     // Start at the root path and while they are the same then do nothing then when they first
     // diverge take the remainder of the two path and replace the entire from path with ".."

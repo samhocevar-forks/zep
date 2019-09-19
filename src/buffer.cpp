@@ -1,16 +1,17 @@
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
-#include <algorithm>
 #include <regex>
 
-#include "buffer.h"
-#include "editor.h"
-#include "filesystem.h"
-#include "mcommon/file/path.h"
-#include "mcommon/string/stringutils.h"
+#include "zep/buffer.h"
+#include "zep/editor.h"
+#include "zep/filesystem.h"
 
-#include "mcommon/logger.h"
+#include "zep/mcommon/file/path.h"
+#include "zep/mcommon/string/stringutils.h"
+
+#include "zep/mcommon/logger.h"
 
 namespace
 {
@@ -122,6 +123,8 @@ BufferLocation ZepBuffer::LocationFromOffsetByChars(const BufferLocation& locati
         if (current >= (long)m_gapBuffer.size())
             break;
 
+        current = std::max(0l, current);
+
         if (m_gapBuffer[current] == '\n')
         {
             if ((current + dir) >= (long)m_gapBuffer.size())
@@ -151,7 +154,7 @@ BufferLocation ZepBuffer::LocationFromOffset(const BufferLocation& location, lon
 
 BufferLocation ZepBuffer::LocationFromOffset(long offset) const
 {
-    return BufferLocation{offset};
+    return BufferLocation{ offset };
 }
 
 BufferLocation ZepBuffer::Search(const std::string& str, BufferLocation start, SearchDirection dir, BufferLocation end) const
@@ -160,7 +163,7 @@ BufferLocation ZepBuffer::Search(const std::string& str, BufferLocation start, S
     (void)dir;
     (void)start;
     (void)str;
-    return BufferLocation{0};
+    return BufferLocation{ 0 };
 }
 
 bool ZepBuffer::Valid(BufferLocation location) const
@@ -363,14 +366,12 @@ BufferRange ZepBuffer::InnerWordMotion(BufferLocation start, uint32_t searchType
 BufferLocation ZepBuffer::FindOnLineMotion(BufferLocation start, const utf8* pCh, SearchDirection dir) const
 {
     auto entry = start;
-    auto IsMatch = [pCh](const char ch)
-    {
+    auto IsMatch = [pCh](const char ch) {
         if (*pCh == ch)
             return true;
         return false;
     };
-    auto NotMatchNotEnd = [pCh](const char ch)
-    {
+    auto NotMatchNotEnd = [pCh](const char ch) {
         if (*pCh != ch && ch != '\n')
             return true;
         return false;
@@ -387,7 +388,7 @@ BufferLocation ZepBuffer::FindOnLineMotion(BufferLocation start, const utf8* pCh
         Skip(NotMatchNotEnd, start, dir);
     }
 
-    if(Valid(start) && *pCh == m_gapBuffer[start])
+    if (Valid(start) && *pCh == m_gapBuffer[start])
     {
         return start;
     }
@@ -522,6 +523,12 @@ void ZepBuffer::ProcessInput(const std::string& text)
     }
     else
     {
+        // Since incremental insertion of a big file into a gap buffer gives us worst case performance,
+        // We build the buffer in a seperate array and assign it.  Much faster.
+        // This is because we remove \r and convert tabs. Tabs are considered 'always evil' and should be
+        // 4 spaces.  Take it up with your local code police if you feel aggrieved.
+        std::vector<utf8> input;
+
         // Update the gap buffer with the text
         // We remove \r, we only care about \n
         for (auto& ch : text)
@@ -532,20 +539,21 @@ void ZepBuffer::ProcessInput(const std::string& text)
             }
             else if (ch == '\t')
             {
-                m_gapBuffer.push_back(' ');
-                m_gapBuffer.push_back(' ');
-                m_gapBuffer.push_back(' ');
-                m_gapBuffer.push_back(' ');
+                input.push_back(' ');
+                input.push_back(' ');
+                input.push_back(' ');
+                input.push_back(' ');
             }
             else
             {
-                m_gapBuffer.push_back(ch);
+                input.push_back(ch);
                 if (ch == '\n')
                 {
-                    m_lineEnds.push_back(long(m_gapBuffer.size()));
+                    m_lineEnds.push_back(long(input.size()));
                 }
             }
         }
+        m_gapBuffer.assign(input.begin(), input.end());
     }
 
     if (m_gapBuffer[m_gapBuffer.size() - 1] != 0)
@@ -555,6 +563,15 @@ void ZepBuffer::ProcessInput(const std::string& text)
     }
 
     m_lineEnds.push_back(long(m_gapBuffer.size()));
+}
+
+bool ZepBuffer::InsideBuffer(BufferLocation loc) const
+{
+    if (loc >= 0 && loc < BufferLocation(m_gapBuffer.size()))
+    {
+        return true;
+    }
+    return false;
 }
 
 BufferLocation ZepBuffer::Clamp(BufferLocation in) const
@@ -625,7 +642,7 @@ void ZepBuffer::Load(const ZepPath& path)
 
 bool ZepBuffer::Save(int64_t& size)
 {
-    if (TestFlags(FileFlags::NotModifiable))
+    if (TestFlags(FileFlags::Locked))
     {
         return false;
     }
@@ -704,12 +721,12 @@ void ZepBuffer::SetText(const std::string& text)
 {
     if (m_gapBuffer.size() != 0)
     {
-        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::TextDeleted, BufferLocation{0}, BufferLocation{long(m_gapBuffer.size())}));
+        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::TextDeleted, BufferLocation{ 0 }, BufferLocation{ long(m_gapBuffer.size()) }));
     }
 
     ProcessInput(text);
 
-    GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::TextAdded, BufferLocation{0}, BufferLocation{long(m_gapBuffer.size())}));
+    GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::TextAdded, BufferLocation{ 0 }, BufferLocation{ long(m_gapBuffer.size()) }));
 
     // Doc is not dirty
     ClearFlags(FileFlags::Dirty);
@@ -719,7 +736,7 @@ void ZepBuffer::SetText(const std::string& text)
     if (TestFlags(FileFlags::FirstInit) && m_gapBuffer.size() > 1)
     {
         ClearFlags(FileFlags::FirstInit);
-        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::Initialized, BufferLocation{0}, BufferLocation{long(m_gapBuffer.size())}));
+        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::Initialized, BufferLocation{ 0 }, BufferLocation{ long(m_gapBuffer.size()) }));
     }
 }
 
@@ -755,83 +772,83 @@ BufferLocation ZepBuffer::GetLinePos(BufferLocation bufferLocation, LineLocation
 
     switch (lineLocation)
     {
-        default:
-        case LineLocation::LineBegin:
-        {
-            return Clamp(bufferLocation);
-        }
-        break;
+    default:
+    case LineLocation::LineBegin:
+    {
+        return Clamp(bufferLocation);
+    }
+    break;
 
-        // The point just after the line end
-        case LineLocation::BeyondLineEnd:
+    // The point just after the line end
+    case LineLocation::BeyondLineEnd:
+    {
+        while (bufferLocation < (long)m_gapBuffer.size() && m_gapBuffer[bufferLocation] != '\n' && m_gapBuffer[bufferLocation] != 0)
         {
-            while (bufferLocation < (long)m_gapBuffer.size() && m_gapBuffer[bufferLocation] != '\n' && m_gapBuffer[bufferLocation] != 0)
-            {
-                bufferLocation++;
-            }
             bufferLocation++;
-            return Clamp(bufferLocation);
         }
-        break;
+        bufferLocation++;
+        return Clamp(bufferLocation);
+    }
+    break;
 
-        case LineLocation::LineCRBegin:
+    case LineLocation::LineCRBegin:
+    {
+        while (bufferLocation < (long)m_gapBuffer.size()
+            && m_gapBuffer[bufferLocation] != '\n'
+            && m_gapBuffer[bufferLocation] != 0)
         {
-            while (bufferLocation < (long)m_gapBuffer.size()
-                   && m_gapBuffer[bufferLocation] != '\n'
-                   && m_gapBuffer[bufferLocation] != 0)
-            {
-                bufferLocation++;
-            }
-            return bufferLocation;
+            bufferLocation++;
         }
-        break;
+        return bufferLocation;
+    }
+    break;
 
-        case LineLocation::LineFirstGraphChar:
+    case LineLocation::LineFirstGraphChar:
+    {
+        while (bufferLocation < (long)m_gapBuffer.size() && !std::isgraph(m_gapBuffer[bufferLocation]) && m_gapBuffer[bufferLocation] != '\n')
         {
-            while (bufferLocation < (long)m_gapBuffer.size() && !std::isgraph(m_gapBuffer[bufferLocation]) && m_gapBuffer[bufferLocation] != '\n')
-            {
-                bufferLocation++;
-            }
-            return Clamp(bufferLocation);
+            bufferLocation++;
         }
-        break;
+        return Clamp(bufferLocation);
+    }
+    break;
 
-        case LineLocation::LineLastNonCR:
+    case LineLocation::LineLastNonCR:
+    {
+        auto start = bufferLocation;
+
+        while (bufferLocation < (long)m_gapBuffer.size()
+            && m_gapBuffer[bufferLocation] != '\n'
+            && m_gapBuffer[bufferLocation] != 0)
         {
-            auto start = bufferLocation;
-
-            while (bufferLocation < (long)m_gapBuffer.size()
-                   && m_gapBuffer[bufferLocation] != '\n'
-                   && m_gapBuffer[bufferLocation] != 0)
-            {
-                bufferLocation++;
-            }
-
-            if (start != bufferLocation)
-            {
-                bufferLocation--;
-            }
-
-            return Clamp(bufferLocation);
+            bufferLocation++;
         }
-        break;
 
-        case LineLocation::LineLastGraphChar:
+        if (start != bufferLocation)
         {
-            while (bufferLocation < (long)m_gapBuffer.size()
-                   && m_gapBuffer[bufferLocation] != '\n'
-                   && m_gapBuffer[bufferLocation] != 0)
-            {
-                bufferLocation++;
-            }
-
-            while (bufferLocation > 0 && bufferLocation < (long)m_gapBuffer.size() && !std::isgraph(m_gapBuffer[bufferLocation]))
-            {
-                bufferLocation--;
-            }
-            return Clamp(bufferLocation);
+            bufferLocation--;
         }
-        break;
+
+        return Clamp(bufferLocation);
+    }
+    break;
+
+    case LineLocation::LineLastGraphChar:
+    {
+        while (bufferLocation < (long)m_gapBuffer.size()
+            && m_gapBuffer[bufferLocation] != '\n'
+            && m_gapBuffer[bufferLocation] != 0)
+        {
+            bufferLocation++;
+        }
+
+        while (bufferLocation > 0 && bufferLocation < (long)m_gapBuffer.size() && !std::isgraph(m_gapBuffer[bufferLocation]))
+        {
+            bufferLocation--;
+        }
+        return Clamp(bufferLocation);
+    }
+    break;
     }
 }
 
@@ -890,7 +907,7 @@ bool ZepBuffer::Insert(const BufferLocation& startOffset, const std::string& str
         return false;
     }
 
-    BufferLocation changeRange{long(str.length())};
+    BufferLocation changeRange{ long(str.length()) };
 
     // We are about to modify this range
     GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::PreBufferChange, startOffset, startOffset + changeRange));
@@ -952,12 +969,36 @@ bool ZepBuffer::Insert(const BufferLocation& startOffset, const std::string& str
     if (TestFlags(FileFlags::FirstInit) && m_gapBuffer.size() > 1)
     {
         ClearFlags(FileFlags::FirstInit);
-        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::Initialized, BufferLocation{0}, BufferLocation{long(m_gapBuffer.size())}));
+        GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::Initialized, BufferLocation{ 0 }, BufferLocation{ long(m_gapBuffer.size()) }));
     }
 
     return true;
 }
 
+bool ZepBuffer::Replace(const BufferLocation& startOffset, const BufferLocation& endOffset, const std::string& str)
+{
+    if (startOffset > (long)m_gapBuffer.size() || endOffset > (long)m_gapBuffer.size())
+    {
+        return false;
+    }
+
+    // We are about to modify this range
+    GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::PreBufferChange, startOffset, endOffset));
+
+    // Perform a straight replace
+    for (auto loc = startOffset; loc < endOffset; loc++)
+    {
+        // Note we don't support utf8 yet
+        m_gapBuffer[loc] = str[0];
+    }
+
+    // This is the range we added (not valid any more in the buffer)
+    GetEditor().Broadcast(std::make_shared<BufferMessage>(this, BufferMessageType::TextChanged, startOffset, endOffset));
+
+    SetFlags(FileFlags::Dirty);
+
+    return true;
+}
 // A fundamental operation - delete a range of characters
 // Need to update:
 // - m_lineEnds

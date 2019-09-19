@@ -1,9 +1,9 @@
-#include "filesystem.h"
+#include "zep/filesystem.h"
 
 #include <fstream>
 
-#include "mcommon/logger.h"
-#include "mcommon/string/stringutils.h"
+#include "zep/mcommon/logger.h"
+#include "zep/mcommon/string/stringutils.h"
 
 #undef ERROR
 
@@ -180,6 +180,11 @@ bool ZepFileSystemCPP::Equivalent(const ZepPath& path1, const ZepPath& path2) co
 #else
     try
     {
+        // The below API expects existing files!  Best we can do is direct compare of paths
+        if (!cpp_fs::exists(path1.string()) || !cpp_fs::exists(path2.string()))
+        {
+            return Canonical(path1).string() == Canonical(path2).string();
+        }
         return cpp_fs::equivalent(path1.string(), path2.string());
     }
     catch (cpp_fs::filesystem_error& err)
@@ -203,6 +208,71 @@ ZepPath ZepFileSystemCPP::Canonical(const ZepPath& path) const
         throw std::runtime_error(err.what());
     }
 #endif
+}
+
+ZepPath ZepFileSystemCPP::GetSearchRoot(const ZepPath& start) const
+{
+    auto findStartPath = [&](const ZepPath& startPath)
+    {
+        if (!startPath.empty())
+        {
+            auto testPath = startPath;
+            if (!IsDirectory(testPath))
+            {
+                testPath = testPath.parent_path();
+            }
+
+            while (!testPath.empty() && IsDirectory(testPath))
+            {
+                bool foundDir = false;
+
+                // Look in this dir
+                ScanDirectory(testPath, [&](const ZepPath& p, bool& recurse)
+                    -> bool
+                {
+                    // Not looking at sub folders
+                    recurse = false;
+
+                    // Found the .git repo
+                    if (p.extension() == ".git" && IsDirectory(p))
+                    {
+                        foundDir = true;
+
+                        // Quit search
+                        return false;
+                    }
+                    return true;
+                });
+
+                // If found,  return it as the path we need
+                if (foundDir)
+                {
+                    return testPath;
+                }
+
+                testPath = testPath.parent_path();
+            }
+        }
+        return startPath;
+    };
+
+    ZepPath workingDir = GetWorkingDirectory();
+    auto startPath = findStartPath(start);
+    if (startPath.empty())
+    {
+        startPath = findStartPath(workingDir);
+        if (startPath.empty())
+        {
+            startPath = GetWorkingDirectory();
+        }
+    }
+
+    // Failure case, just use current path
+    if (startPath.empty())
+    {
+        startPath = start;
+    }
+    return startPath;
 }
 
 } // namespace Zep

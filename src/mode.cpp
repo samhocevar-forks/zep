@@ -1,14 +1,14 @@
-#include "mode.h"
-#include "buffer.h"
-#include "commands.h"
-#include "editor.h"
-#include "tab_window.h"
-#include "window.h"
-#include "editor.h"
-#include "filesystem.h"
-#include "mode_search.h"
+#include "zep/mode.h"
+#include "zep/buffer.h"
+#include "zep/commands.h"
+#include "zep/editor.h"
+#include "zep/filesystem.h"
+#include "zep/mode_search.h"
+#include "zep/tab_window.h"
+#include "zep/window.h"
 
-#include "mcommon/logger.h"
+#include "zep/mcommon/logger.h"
+
 namespace Zep
 {
 
@@ -45,7 +45,7 @@ void ZepMode::AddCommandText(std::string strText)
 
 void ZepMode::AddCommand(std::shared_ptr<ZepCommand> spCmd)
 {
-    if (GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::NotModifiable))
+    if (GetCurrentWindow() && GetCurrentWindow()->GetBuffer().TestFlags(FileFlags::Locked))
     {
         // Ignore commands on buffers because we are view only,
         // and all commands currently modify the buffer!
@@ -144,8 +144,9 @@ bool ZepMode::HandleGlobalCtrlCommand(const std::string& cmd, uint32_t modifiers
         }
         else if (cmd == "io")
         {
-            // This is a quick and easy 'alternate file swap'.  It currently only swaps in the same directory.
-            // An updated version would be to check parent and \Inc folders, etc.
+            // This is a quick and easy 'alternate file swap'.
+            // It searches a preset list of useful folder targets around the current file.
+            // A better alternative might be a wildcard list of relations, but this works well enough
             // It also only looks for a file with the same name and different extension!
             // it is good enough for my current needs...
             auto& buffer = GetCurrentWindow()->GetBuffer();
@@ -153,21 +154,69 @@ bool ZepMode::HandleGlobalCtrlCommand(const std::string& cmd, uint32_t modifiers
             if (!path.empty() && GetEditor().GetFileSystem().Exists(path))
             {
                 auto ext = path.extension();
-                GetEditor().GetFileSystem().ScanDirectory(path.parent_path(), [&](const ZepPath& currentPath, bool& dont_recurse)
+                auto searchPaths = std::vector<ZepPath>{
+                    path.parent_path(),
+                    path.parent_path().parent_path(),
+                    path.parent_path().parent_path().parent_path()
+                };
+
+                auto ignoreFolders = std::vector<std::string>{ "build", ".git", "obj", "debug", "release" };
+
+                auto priorityFolders = std::vector<std::string>{ "source", "include", "src", "inc", "lib" };
+
+                // Search the paths, starting near and widening
+                for (auto& p : searchPaths)
                 {
-                    dont_recurse = true;
-                    if (path.stem() == currentPath.stem() &&
-                        !(currentPath.extension() == path.extension()))
+                    if (p.empty())
+                        continue;
+
+                    bool found = false;
+
+                    // Look for the priority folder locations
+                    std::vector<ZepPath> searchFolders{ path.parent_path() };
+                    for (auto& priorityFolder : priorityFolders)
                     {
-                        auto load = GetEditor().GetFileBuffer(currentPath, 0, true);
-                        if (load != nullptr)
-                        {
-                            GetCurrentWindow()->SetBuffer(load);
-                            return false;
-                        }
+                        GetEditor().GetFileSystem().ScanDirectory(p, [&](const ZepPath& currentPath, bool& recurse) {
+                            recurse = false;
+                            if (GetEditor().GetFileSystem().IsDirectory(currentPath))
+                            {
+                                auto lower = string_tolower(currentPath.filename().string());
+                                if (std::find(ignoreFolders.begin(), ignoreFolders.end(), lower) != ignoreFolders.end())
+                                {
+                                    return true;
+                                }
+
+                                if (priorityFolder == lower)
+                                {
+                                    searchFolders.push_back(currentPath);
+                                }
+                            }
+                            return true;
+                        });
                     }
-                    return true;
-                });
+
+                    for (auto& folder : searchFolders)
+                    {
+                        LOG(INFO) << "Searching: " << folder.string();
+
+                        GetEditor().GetFileSystem().ScanDirectory(folder, [&](const ZepPath& currentPath, bool& recurse) {
+                            recurse = true;
+                            if (path.stem() == currentPath.stem() && !(currentPath.extension() == path.extension()))
+                            {
+                                auto load = GetEditor().GetFileBuffer(currentPath, 0, true);
+                                if (load != nullptr)
+                                {
+                                    GetCurrentWindow()->SetBuffer(load);
+                                    found = true;
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+                        if (found)
+                            return true;
+                    }
+                }
             }
         }
         return true;
@@ -183,7 +232,7 @@ bool ZepMode::HandleGlobalCtrlCommand(const std::string& cmd, uint32_t modifiers
         return true;
     }
     // Moving between splits
-    else if(cmd == "j")
+    else if (cmd == "j")
     {
         GetCurrentWindow()->GetTabWindow().DoMotion(WindowMotion::Down);
         return true;

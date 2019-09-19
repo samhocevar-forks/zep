@@ -1,5 +1,6 @@
-echo "hello"
-
+pushd build
+cmake --build . --config Release
 mkdir c:\tools\Zep
-xcopy /s build\Debug\* c:\tols\Zep
+xcopy /s Release\* c:\tools\Zep
+popd
 
