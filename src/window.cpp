@@ -683,8 +683,8 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
                 utf8 tmp[2];
                 if (*pCh >= 0x80)
                 {
-                    tmp[0] = '\xc2';
-                    tmp[1] = *pCh;
+                    tmp[0] = (*pCh & 0x40) ? '\xc3' : '\xc2';
+                    tmp[1] = *pCh & 0xbf;
                     pCh = &tmp[0];
                     pEnd = pCh + 2;
                 }

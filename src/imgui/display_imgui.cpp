@@ -34,8 +34,8 @@ NVec2f ZepDisplay_ImGui::GetTextSize(const utf8* pBegin, const utf8* pEnd) const
     utf8 tmp[2];
     if (*pBegin >= 0x80)
     {
-        tmp[0] = (utf8)'\xc2';
-        tmp[1] = *pBegin;
+        tmp[0] = (*pBegin & 0x40) ? (utf8)'\xc3' : (utf8)'\xc2';
+        tmp[1] = *pBegin & 0xbf;
         pBegin = &tmp[0];
         pEnd = pBegin + 2;
     }
