@@ -29,7 +29,6 @@ NVec2f ZepDisplay_ImGui::GetTextSize(const utf8* pBegin, const utf8* pEnd) const
     // need as we draw one character at a time...
     ImFont* font = ImGui::GetFont();
     const float font_size = ImGui::GetFontSize();
-
     ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, (const char*)pBegin, (const char*)pEnd, NULL);
     if (text_size.x == 0.0)
     {

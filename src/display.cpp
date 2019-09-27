@@ -18,8 +18,9 @@ void ZepDisplay::BuildCharCache()
     m_defaultCharSize = GetTextSize((const utf8*)&chA, (const utf8*)&chA + 1);
     for (int i = 0; i < 256; i++)
     {
-        utf8 ch = (utf8)i;
-        m_charCache[i] = GetTextSize(&ch, &ch + 1);
+        size_t len;
+        utf8 const *pCh = Pico8ToUtf8(i, &len);
+        m_charCache[i] = GetTextSize(pCh, pCh + len);
     }
     m_charCacheDirty = false;
 }

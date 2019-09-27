@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pico8/pico8.h"
+
 namespace Zep
 {
 
@@ -38,6 +40,24 @@ inline size_t Utf8Length(const char* s)
         stringLength += len;
     }
     return stringLength;
+}
+
+inline uint8_t const *Pico8ToUtf8(uint8_t c, size_t *len = nullptr)
+{
+    // PICO-8 charset support: flip lowercase/uppercase and convert to UTF-8
+    uint8_t const flip = isalpha(c) ? ('A' ^ 'a') : 0;
+    auto s = z8::pico8::charset::decode(c ^ flip);
+    if (len)
+        *len = s.length();
+    return (uint8_t const *)s.data();
+}
+
+inline void FixPico8Input(std::string &s)
+{
+    // PICO-8 replaces capital letters with special glyphs
+    for (auto &ch : s)
+        if (ch >= 'A' && ch <= 'Z')
+            ch = (char)(ch - 'A' + 0x80);
 }
 
 std::string string_replace(std::string subject, const std::string& search, const std::string& replace);

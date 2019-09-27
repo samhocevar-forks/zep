@@ -14,8 +14,6 @@
 #include "zep/mcommon/logger.h"
 #include "zep/mcommon/string/stringutils.h"
 
-#include "pico8/pico8.h"
-
 // A 'window' is like a vim window; i.e. a region inside a tab
 namespace Zep
 {
@@ -574,9 +572,7 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
         }
         else
         {
-            // PICO-8 charset support: flip lowercase/uppercase and covert to UTF-8
-            int const flip = isalpha(*pCh) ? ('A' ^ 'a') : 0;
-            pCh = (utf8 *)z8::pico8::charset::decode(*pCh ^ flip).data();
+            pCh = Pico8ToUtf8(*pCh);
         }
 
         // Note: We don't really support UTF8, but our whitespace symbol is UTF8!

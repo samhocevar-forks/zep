@@ -377,10 +377,7 @@ void ZepMode_Standard::AddKeyPress(uint32_t key, uint32_t modifierKeys)
         // Simple insert
         if (!ch.empty())
         {
-            // PICO-8 replaces capital letters with special glyphs
-            for (size_t i = 0; i < ch.size(); ++i)
-                if (ch[i] >= 'A' && ch[i] <= 'Z')
-                    ch[i] = (char)(ch[i] - 'A' + 0x80);
+            FixPico8Input(ch);
 
             auto cmd = std::make_shared<ZepCommand_Insert>(buffer, startOffset, ch, GetCurrentWindow()->GetBufferCursor());
             if (boundary)
