@@ -14,6 +14,8 @@
 #include "zep/mcommon/logger.h"
 #include "zep/mcommon/string/stringutils.h"
 
+#include "pico8/pico8.h"
+
 // A 'window' is like a vim window; i.e. a region inside a tab
 namespace Zep
 {
@@ -570,13 +572,15 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
             }
             hiddenChar = true;
         }
+        else
+        {
+            // PICO-8 charset support: flip lowercase/uppercase and covert to UTF-8
+            int const flip = isalpha(*pCh) ? ('A' ^ 'a') : 0;
+            pCh = (utf8 *)z8::pico8::charset::decode(*pCh ^ flip).data();
+        }
 
         // Note: We don't really support UTF8, but our whitespace symbol is UTF8!
         const utf8* pEnd = pCh + UTF8_CHAR_LEN(*pCh);
-
-        // If this is a PICO-8 high-bit glyph, override the operation above
-        if (*pCh >= 0x80)
-            pEnd = pCh + 1;
 
         auto textSize = display.GetTextSize(pCh, pEnd);
         if (displayPass == 0)
@@ -677,22 +681,6 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
                     {
                         col = m_pBuffer->GetTheme().GetColor(ThemeColor::Text);
                     }
-                }
-
-                // PICO-8 glyph support and uppercase/lowercase swap
-                utf8 tmp[2];
-                if (*pCh >= 0x80)
-                {
-                    tmp[0] = (*pCh & 0x40) ? '\xc3' : '\xc2';
-                    tmp[1] = *pCh & 0xbf;
-                    pCh = &tmp[0];
-                    pEnd = pCh + 2;
-                }
-                else if (isalpha(*pCh))
-                {
-                    tmp[0] = *pCh ^ ('A' ^ 'a');
-                    pCh = &tmp[0];
-                    pEnd = pCh + 1;
                 }
 
                 display.DrawChars(NVec2f(screenPosX, ToWindowY(lineInfo.spanYPx)), col, pCh, pEnd);
