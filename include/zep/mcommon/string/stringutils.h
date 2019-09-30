@@ -46,7 +46,7 @@ inline uint8_t const *Pico8ToUtf8(uint8_t c, size_t *len = nullptr)
 {
     // PICO-8 charset support: flip lowercase/uppercase and convert to UTF-8
     uint8_t const flip = isalpha(c) ? ('A' ^ 'a') : 0;
-    auto s = z8::pico8::charset::p8_to_utf8(c ^ flip);
+    auto s = z8::pico8::charset::pico8_to_utf8[c ^ flip];
     if (len)
         *len = s.length();
     return (uint8_t const *)s.data();
