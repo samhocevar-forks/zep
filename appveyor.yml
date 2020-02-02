@@ -1,5 +1,5 @@
 # Build worker image (VM template)
-image: Visual Studio 2017
+image: Visual Studio 2019
 
 # scripts that are called at very beginning, before repo cloning
 init:
@@ -25,7 +25,7 @@ configuration:
 environment:
   MSBUILD_FLAGS: /verbosity:minimal /maxcpucount
   matrix:
-    - generator: "Visual Studio 15 2017 Win64"
+    - generator: "Visual Studio 16 2019"
 
 matrix:
   fast_finish: true
@@ -38,6 +38,11 @@ build_script:
   - cd %APPVEYOR_BUILD_FOLDER%
   - dir
   # create folder for an out-of-source-tree build: "c:\projects\build"
+  - git clone https://github.com/cmaughan/MUtils
+  - cd MUtils
+  - ./prebuild.bat
+  - config.bat
+  - build_all.bat
   - cd.. 
   - mkdir build
   - cd build
@@ -56,8 +61,8 @@ test_script:
 
 after_build:
   # set compiler var
-  - if "%generator%"=="Visual Studio 14" (set COMPILER="VC14")
+  - if "%generator%"=="Visual Studio 16" (set COMPILER="VC16")
   # switch to project build folder and zip "tutorials" folder
-  - cd C:\projects\build
+  - cd C:\projects\zep\build
   - 7z a -tzip -mx9 "zep-%configuration%-%APPVEYOR_BUILD_VERSION%-%COMPILER%.zip" %configuration%
   - appveyor PushArtifact "zep-%configuration%-%APPVEYOR_BUILD_VERSION%-%COMPILER%.zip"

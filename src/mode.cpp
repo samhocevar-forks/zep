@@ -135,6 +135,29 @@ NVec2i ZepMode::GetVisualRange() const
     return NVec2i(m_visualBegin, m_visualEnd);
 }
 
+bool ZepMode::HandleGlobalCommand(const std::string& cmd, uint32_t modifiers, bool& needMoreChars)
+{
+    if (modifiers & ModifierKey::Ctrl)
+    {
+        return HandleGlobalCtrlCommand(cmd, modifiers, needMoreChars);
+    }
+
+    if (cmd[0] == ExtKeys::F8)
+    {
+        auto pWindow = GetCurrentWindow();
+        auto& buffer = pWindow->GetBuffer();
+        auto dir = (modifiers & ModifierKey::Shift) != 0 ? SearchDirection::Backward : SearchDirection::Forward;
+
+        auto pFound = buffer.FindNextMarker(GetCurrentWindow()->GetBufferCursor(), dir, RangeMarkerType::Message);
+        if (pFound)
+        {
+            GetCurrentWindow()->SetBufferCursor(pFound->range.first);
+        }
+        return true;
+    }
+    return false;
+}
+
 bool ZepMode::HandleGlobalCtrlCommand(const std::string& cmd, uint32_t modifiers, bool& needMoreChars)
 {
     needMoreChars = false;

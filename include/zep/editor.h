@@ -76,7 +76,7 @@ enum class ZepMouseButton
 enum class Msg
 {
     HandleCommand,
-    Quit,
+    RequestQuit,
     GetClipBoard,
     SetClipBoard,
     MouseMove,
@@ -182,6 +182,11 @@ const float bottomBorder = 4.0f;
 const float textBorder = 4.0f;
 const float leftBorderChars = 3;
 
+#define DPI_VEC2(value) (value * GetEditor().GetPixelScale())
+#define DPI_Y(value) (GetEditor().GetPixelScale() * value)
+#define DPI_X(value) (GetEditor().GetPixelScale() * value)
+#define DPI_RECT(value) (value * GetEditor().GetPixelScale())
+
 enum class EditorStyle
 {
     Normal = 0,
@@ -192,13 +197,15 @@ struct EditorConfig
 {
     uint32_t showScrollBar = 1;
     EditorStyle style = EditorStyle::Normal;
-    uint32_t lineMarginTop = 1;
-    uint32_t lineMarginBottom = 1;
+    NVec2f lineMargins = NVec2f(1.0f);
+    NVec2f widgetMargins = NVec2f(1.0f);
     bool showLineNumbers = true;
+    bool shortTabNames = true;
     bool showIndicatorRegion = true;
     bool autoHideCommandRegion = true;
     bool cursorLineSolid = false;
     float backgroundFadeTime = 60.0f;
+    float backgroundFadeWait = 60.0f;
 };
 
 class ZepEditor
@@ -209,8 +216,11 @@ public:
     ~ZepEditor();
 
     void LoadConfig(const ZepPath& config_path);
-    void Quit();
+    void LoadConfig(std::shared_ptr<cpptoml::table> spConfig);
+    void SaveConfig(std::shared_ptr<cpptoml::table> spConfig);
+    void RequestQuit();
 
+    void Reset();
     ZepBuffer* InitWithFileOrDir(const std::string& str);
     ZepBuffer* InitWithText(const std::string& strName, const std::string& strText);
 
@@ -238,6 +248,7 @@ public:
     ZepBuffer* GetFileBuffer(const ZepPath& filePath, uint32_t fileFlags = 0, bool create = true);
     ZepBuffer* GetEmptyBuffer(const std::string& name, uint32_t fileFlags = 0);
     void RemoveBuffer(ZepBuffer* pBuffer);
+    std::vector<ZepWindow*> FindBufferWindows(const ZepBuffer* pBuffer) const;
 
     void SetRegister(const std::string& reg, const Register& val);
     void SetRegister(const char reg, const Register& val);
@@ -245,7 +256,10 @@ public:
     void SetRegister(const char reg, const char* pszText);
     Register& GetRegister(const std::string& reg);
     Register& GetRegister(const char reg);
-    const tRegisters& GetRegisters() const;
+    const tRegisters& GetRegisters();
+
+    void ReadClipboard();
+    void WriteClipboard();
 
     void Notify(std::shared_ptr<ZepMessage> message);
     uint32_t GetFlags() const
@@ -304,7 +318,6 @@ public:
     bool OnMouseMove(const NVec2f& mousePos);
     bool OnMouseDown(const NVec2f& mousePos, ZepMouseButton button);
     bool OnMouseUp(const NVec2f& mousePos, ZepMouseButton button);
-    void TickInputState();
     const NVec2f GetMousePos() const;
 
     void SetPixelScale(float pt);
@@ -325,6 +338,7 @@ public:
 private:
     // Call GetBuffer publicly, to stop creation of duplicate buffers refering to the same file
     ZepBuffer* CreateNewBuffer(const std::string& bufferName);
+    ZepBuffer* CreateNewBuffer(const ZepPath& path);
 
     // Ensure there is a valid tab window and return it
     ZepTabWindow* EnsureTab();

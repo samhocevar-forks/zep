@@ -3,7 +3,7 @@
 if (BUILD_TESTS AND BUILD_IMGUI)
 
 # Evil glob
-file(GLOB_RECURSE FOUND_TEST_SOURCES "*.test.cpp")
+file(GLOB_RECURSE FOUND_TEST_SOURCES "${ZEP_ROOT}/src/*.test.cpp")
 
 list(APPEND TEST_SOURCES
     ${FOUND_TEST_SOURCES}
@@ -11,7 +11,6 @@ list(APPEND TEST_SOURCES
 )
 
 set(CMAKE_AUTOMOC OFF)
-include(tests/list.cmake)
 enable_testing()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DGTEST_HAS_TR1_TUPLE=0")

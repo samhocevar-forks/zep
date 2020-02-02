@@ -1,11 +1,14 @@
 #pragma once
 
+#include <functional>
+#include <set>
+
 #include "editor.h"
-#include "zep/mcommon/file/path.h"
 #include "theme.h"
+#include "zep/line_widgets.h"
+#include "zep/mcommon/file/path.h"
 
 #include "gap_buffer.h"
-#include <set>
 
 namespace Zep
 {
@@ -42,9 +45,20 @@ enum : uint32_t
     ReadOnly = (1 << 2),
     Locked = (1 << 3), // Can this file path ever be written to?
     Dirty = (1 << 4), // Has the file been changed?
-    NotYetSaved = (1 << 5),
+    HasWarnings = (1 << 6),
+    HasErrors = (1 << 7),
+    DefaultBuffer = (1 << 8) // Default startup buffer
 };
-};
+}
+
+// Ensure the character is >=0 and <=127 as in the ASCII standard,
+// isalnum, for example will assert on debug build if not in this range.
+inline int ToASCII(const char ch)
+{
+    auto ret = (unsigned int)ch;
+    ret = std::min(ret, 127u);
+    return ret;
+}
 
 enum class BufferType
 {
@@ -92,13 +106,14 @@ namespace RangeMarkerDisplayType
 {
 enum
 {
-    Underline = (1 << 0),           // Underline the range
-    Background = (1 << 1),          // Add a background to the range
-    Tooltip = (1 << 2),             // Show a tooltip using the name/description
-    TooltipAtLine = (1 << 3),       // Tooltip shown if the user hovers the line
-    CursorTip = (1 << 4),           // Tooltip shown if the user cursor is on the Mark
-    CursorTipAtLine = (1 << 5),     // Tooltip shown if the user cursor is on the Mark line
-    Indicator = (1 << 6),           // Show an indicator on the left side
+    Hidden = 0,
+    Underline = (1 << 0), // Underline the range
+    Background = (1 << 1), // Add a background to the range
+    Tooltip = (1 << 2), // Show a tooltip using the name/description
+    TooltipAtLine = (1 << 3), // Tooltip shown if the user hovers the line
+    CursorTip = (1 << 4), // Tooltip shown if the user cursor is on the Mark
+    CursorTipAtLine = (1 << 5), // Tooltip shown if the user cursor is on the Mark line
+    Indicator = (1 << 6), // Show an indicator on the left side
     All = Underline | Tooltip | TooltipAtLine | CursorTip | CursorTipAtLine | Indicator | Background
 };
 };
@@ -111,14 +126,24 @@ enum class ToolTipPos
     Count = 3
 };
 
+namespace RangeMarkerType
+{
+enum
+{
+    Message = (1 << 0),
+    Search = (1 << 1),
+    All = (Message | Search)
+};
+};
+
 struct RangeMarker
 {
-    long bufferLine = -1;
     BufferRange range;
     ThemeColor textColor = ThemeColor::Text;
     ThemeColor backgroundColor = ThemeColor::Background;
     ThemeColor highlightColor = ThemeColor::Background;
     uint32_t displayType = RangeMarkerDisplayType::All;
+    uint32_t markerType = RangeMarkerType::Message;
     std::string name;
     std::string description;
     ToolTipPos tipPos = ToolTipPos::AboveLine;
@@ -139,7 +164,7 @@ struct ZepRepl
     std::function<bool(const std::string&, int&)> fnIsFormComplete;
 };
 
-using tRangeMarkers = std::vector<std::shared_ptr<RangeMarker>>;
+using tRangeMarkers = std::map<long, std::set<std::shared_ptr<RangeMarker>>>;
 
 const long InvalidOffset = -1;
 
@@ -150,8 +175,11 @@ class ZepBuffer : public ZepComponent
 {
 public:
     ZepBuffer(ZepEditor& editor, const std::string& strName);
+    ZepBuffer(ZepEditor& editor, const ZepPath& path);
     virtual ~ZepBuffer();
-    void SetText(const std::string& strText);
+
+    void Clear();
+    void SetText(const std::string& strText, bool initFromFile = false);
     void Load(const ZepPath& path);
     bool Save(int64_t& size);
 
@@ -175,6 +203,7 @@ public:
     bool SkipOne(fnMatch IsToken, BufferLocation& start, SearchDirection dir) const;
     bool SkipNot(fnMatch IsToken, BufferLocation& start, SearchDirection dir) const;
 
+    BufferLocation Find(BufferLocation start, const utf8* pBegin, const utf8* pEnd) const;
     BufferLocation FindOnLineMotion(BufferLocation start, const utf8* pCh, SearchDirection dir) const;
     BufferLocation WordMotion(BufferLocation start, uint32_t searchType, SearchDirection dir) const;
     BufferLocation EndWordMotion(BufferLocation start, uint32_t searchType, SearchDirection dir) const;
@@ -254,28 +283,59 @@ public:
 
     void SetSelection(const BufferRange& sel);
     BufferRange GetSelection() const;
+    bool HasSelection() const;
+    void ClearSelection();
 
     void AddRangeMarker(std::shared_ptr<RangeMarker> spMarker);
-    void ClearRangeMarkers();
-    const tRangeMarkers& GetRangeMarkers() const;
+    void ClearRangeMarkers(const std::set<std::shared_ptr<RangeMarker>>& markers);
+    void ClearRangeMarkers(uint32_t types);
+    tRangeMarkers GetRangeMarkers(uint32_t types) const;
+    void HideMarkers(uint32_t markerType);
+    void ShowMarkers(uint32_t markerType, uint32_t displayType);
+
+    void ForEachMarker(uint32_t types, SearchDirection dir, BufferLocation begin, BufferLocation end, std::function<bool(const std::shared_ptr<RangeMarker>&)> fnCB) const;
+    std::shared_ptr<RangeMarker> FindNextMarker(BufferLocation start, SearchDirection dir, uint32_t markerType);
 
     void SetBufferType(BufferType type);
     BufferType GetBufferType() const;
 
-    void SetLastLocation(BufferLocation loc);
-    BufferLocation GetLastLocation() const;
+    void SetLastEditLocation(BufferLocation loc);
+    BufferLocation GetLastEditLocation() const;
 
     ZepMode* GetMode() const;
     void SetMode(std::shared_ptr<ZepMode> spMode);
 
-    void SetReplProvider(ZepRepl* repl) { m_replProvider = repl; }
-    ZepRepl* GetReplProvider() const { return m_replProvider; }
+    void SetReplProvider(ZepRepl* repl)
+    {
+        m_replProvider = repl;
+    }
+    ZepRepl* GetReplProvider() const
+    {
+        return m_replProvider;
+    }
+
+    using tLineWidgets = std::vector<std::shared_ptr<ILineWidget>>;
+    void AddLineWidget(long line, std::shared_ptr<ILineWidget> spWidget);
+    void ClearLineWidgets(long line);
+    const tLineWidgets* GetLineWidgets(long line) const;
+
+    uint64_t GetLastUpdateTime() const
+    {
+        return m_lastUpdateTime;
+    }
+    uint64_t GetUpdateCount() const
+    {
+        return m_updateCount;
+    }
+
+    bool IsHidden() const;
 
 private:
     // Internal
     GapBuffer<utf8>::const_iterator SearchWord(uint32_t searchType, GapBuffer<utf8>::const_iterator itrBegin, GapBuffer<utf8>::const_iterator itrEnd, SearchDirection dir) const;
+    void ClearRangeMarker(std::shared_ptr<RangeMarker> spMarker);
 
-    void ProcessInput(const std::string& str);
+    void MarkUpdate();
 
     void UpdateForInsert(const BufferLocation& startOffset, const BufferLocation& endOffset);
     void UpdateForDelete(const BufferLocation& startOffset, const BufferLocation& endOffset);
@@ -284,19 +344,22 @@ private:
     bool m_dirty = false; // Is the text modified?
     GapBuffer<utf8> m_gapBuffer; // Storage for the text - a gap buffer for efficiency
     std::vector<long> m_lineEnds; // End of each line
-    uint32_t m_fileFlags = FileFlags::NotYetSaved;
+    uint32_t m_fileFlags = 0;
     BufferType m_bufferType = BufferType::Normal;
     std::shared_ptr<ZepSyntax> m_spSyntax;
     std::string m_strName;
     ZepPath m_filePath;
     std::shared_ptr<ZepTheme> m_spOverrideTheme;
+    std::map<BufferLocation, std::vector<std::shared_ptr<ILineWidget>>> m_lineWidgets;
 
     BufferRange m_selection;
     tRangeMarkers m_rangeMarkers;
-    BufferLocation m_lastLocation{ 0 };
+    BufferLocation m_lastEditLocation{ 0 };
     std::shared_ptr<ZepMode> m_spMode;
     ZepRepl* m_replProvider = nullptr; // May not be set
     SyntaxProvider m_syntaxProvider;
+    uint64_t m_updateCount = 0;
+    uint64_t m_lastUpdateTime = 0;
 };
 
 // Notification payload
@@ -306,7 +369,9 @@ enum class BufferMessageType
     PreBufferChange = 0,
     TextChanged,
     TextDeleted,
-    TextAdded
+    TextAdded,
+    Loaded,
+    MarkersChanged
 };
 
 struct BufferMessage : public ZepMessage

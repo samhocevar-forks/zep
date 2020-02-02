@@ -295,6 +295,29 @@ void ZepWindow::GetCharPointer(BufferLocation loc, const utf8*& pBegin, const ut
     pEnd = pBegin + UTF8_CHAR_LEN(*pBegin);
 }
 
+float ZepWindow::GetLineTopMargin(long line)
+{
+    float height = DPI_Y((float)GetEditor().GetConfig().lineMargins.x);
+    auto pLineWidgets = m_pBuffer->GetLineWidgets(line);
+    if (pLineWidgets)
+    {
+        for (auto& widget : *pLineWidgets)
+        {
+            auto size = DPI_VEC2(widget->GetSize());
+            auto margins = DPI_VEC2(GetEditor().GetConfig().widgetMargins);
+
+            // Each widget has a margin then its height then the bottom
+            height += margins.x;
+            height += size.y;
+            height += margins.y;
+        }
+    }
+    // Add the line margin too, so the widget sits in a space similar to a line
+    height += DPI_Y((float)GetEditor().GetConfig().lineMargins.y);
+
+    return height;
+}
+
 // This is the most expensive part of window update; applying line span generation for wrapped text.
 // It can take about a millisecond to do during editing on release buildj; but this is fast enough for now.
 // There are several ways in which this function can be optimized:
@@ -323,9 +346,7 @@ void ZepWindow::UpdateLineSpans()
 
     auto& display = GetEditor().GetDisplay();
 
-    NVec2f margins = NVec2f((float)GetEditor().GetConfig().lineMarginTop, (float)GetEditor().GetConfig().lineMarginBottom);
     float textHeight = GetEditor().GetDisplay().GetFontHeightPixels();
-    float fullLineHeight = textHeight + margins.x + margins.y;
 
     // Process every buffer line
     for (;;)
@@ -338,6 +359,9 @@ void ZepWindow::UpdateLineSpans()
         BufferRange columnOffsets;
         if (!m_pBuffer->GetLineOffsets(bufferLine, columnOffsets.first, columnOffsets.second))
             break;
+
+        NVec2f margins = NVec2f(GetLineTopMargin(bufferLine), DPI_Y((float)GetEditor().GetConfig().lineMargins.y));
+        float fullLineHeight = textHeight + margins.x + margins.y;
 
         // Start a new line
         SpanInfo* lineInfo = new SpanInfo();
@@ -371,6 +395,11 @@ void ZepWindow::UpdateLineSpans()
                     lineInfo = new SpanInfo();
                     spanLine++;
                     bufferPosYPx += fullLineHeight;
+
+                    // Reset the line margin and height, because when we split a line we don't include a
+                    // custom widget space above it.  That goes just above the first part of the line
+                    margins.x = (float)GetEditor().GetConfig().lineMargins.x;
+                    fullLineHeight = textHeight + margins.x + margins.y;
 
                     // Now jump to the next 'screen line' for the rest of this 'buffer line'
                     lineInfo->columnOffsets = BufferRange(ch, ch + 1);
@@ -419,7 +448,7 @@ void ZepWindow::UpdateLineSpans()
         m_windowLines.push_back(lineInfo);
     }
 
-    m_bufferSizeYPx = m_windowLines[m_windowLines.size() - 1]->spanYPx + fullLineHeight;
+    m_bufferSizeYPx = m_windowLines[m_windowLines.size() - 1]->spanYPx + textHeight + DPI_Y(GetEditor().GetConfig().lineMargins.y);
 
     UpdateVisibleLineRange();
     m_layoutDirty = true;
@@ -472,7 +501,7 @@ float ZepWindow::ToWindowY(float pos) const
 
 float ZepWindow::TipBoxShadowWidth() const
 {
-    return GetEditor().GetPixelScale() * 4.0f;
+    return DPI_X(4.0f);
 }
 
 void ZepWindow::DisplayToolTip(const NVec2f& pos, const RangeMarker& marker) const
@@ -507,9 +536,36 @@ NVec4f ZepWindow::GetBlendedColor(ThemeColor color) const
     auto col = m_pBuffer->GetTheme().GetColor(color);
     if (GetEditor().GetConfig().style == EditorStyle::Minimal)
     {
-        col.w = std::max(0.0f, 1.0f - GetEditor().GetLastEditElapsedTime() / 60.0f);
+        float lastEdit = GetEditor().GetLastEditElapsedTime();
+        if (lastEdit > GetEditor().GetConfig().backgroundFadeWait)
+        {
+            lastEdit -= GetEditor().GetConfig().backgroundFadeWait;
+            col.w = std::max(0.0f, 1.0f - lastEdit / GetEditor().GetConfig().backgroundFadeTime);
+        }
     }
     return col;
+}
+
+void ZepWindow::DrawLineWidgets(SpanInfo& lineInfo)
+{
+    auto pLineWidgets = m_pBuffer->GetLineWidgets(lineInfo.bufferLineNumber);
+    if (!pLineWidgets)
+    {
+        return;
+    }
+
+    auto lineMargins = DPI_VEC2(GetEditor().GetConfig().lineMargins);
+    auto widgetMargins = DPI_VEC2(GetEditor().GetConfig().widgetMargins);
+
+    float currentY = lineMargins.x;
+    for (auto& pWidget : *pLineWidgets)
+    {
+        auto widgetSize = DPI_VEC2(pWidget->GetSize());
+
+        currentY += widgetMargins.x;
+        pWidget->Draw(*m_pBuffer, NVec2f(lineInfo.pixelRenderRange.x, ToWindowY(currentY + lineInfo.spanYPx)));
+        currentY += widgetMargins.y;
+    }
 }
 
 // TODO: This function draws one char at a time.  It could be more optimal at the expense of some
@@ -531,7 +587,9 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
             return;
         auto cursorBufferLine = GetCursorLineInfo(cursorCL.y).bufferLineNumber;
         std::string strNum;
-        if (m_displayMode == DisplayMode::Vim)
+
+        // In Vim mode show relative lines, unless in Ex mode (with hidden cursor)
+        if (m_displayMode == DisplayMode::Vim && m_cursorType != CursorType::Hidden)
         {
             strNum = std::to_string(std::abs(lineInfo.bufferLineNumber - cursorBufferLine));
         }
@@ -554,6 +612,8 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
     // Drawing commands for the whole line
     if (displayPass == WindowPass::Background)
     {
+        display.SetClipRect(m_textRegion->rect);
+
         // Fill the background of the line
         display.DrawRectFilled(
             NRectf(
@@ -608,12 +668,14 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
                 }
             }
         }
+        display.SetClipRect(m_bufferRegion->rect);
 
         if (GetEditor().GetConfig().showIndicatorRegion)
         {
+            display.SetClipRect(m_indicatorRegion->rect);
+
             // Show any markers in the left indicator region
-            for (auto& marker : m_pBuffer->GetRangeMarkers())
-            {
+            m_pBuffer->ForEachMarker(RangeMarkerType::Message, SearchDirection::Forward, lineInfo.columnOffsets.first, lineInfo.columnOffsets.second, [&](const std::shared_ptr<RangeMarker>& marker) {
                 // >|< Text.  This is the bit between the arrows <-.  A vertical bar in the 'margin'
                 if (marker->displayType & RangeMarkerDisplayType::Indicator)
                 {
@@ -630,12 +692,17 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
                             m_pBuffer->GetTheme().GetColor(marker->highlightColor));
                     }
                 }
-            }
+                return true;
+            });
+
+            display.SetClipRect(m_bufferRegion->rect);
         }
 
         if (GetEditor().GetConfig().showLineNumbers)
         {
+            display.SetClipRect(m_numberRegion->rect);
             displayLineNumber();
+            display.SetClipRect(m_bufferRegion->rect);
         }
     }
 
@@ -643,6 +710,8 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
     auto pSyntax = m_pBuffer->GetSyntax();
 
     auto tipTimeSeconds = timer_get_elapsed_seconds(m_toolTipTimer);
+
+    display.SetClipRect(m_textRegion->rect);
 
     // Walk from the start of the line to the end of the line (in buffer chars)
     for (auto ch = lineInfo.columnOffsets.first; ch < lineInfo.columnOffsets.second; ch++)
@@ -669,8 +738,14 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
             }
 
             // Show any markers
-            for (auto& marker : m_pBuffer->GetRangeMarkers())
-            {
+            m_pBuffer->ForEachMarker(RangeMarkerType::All, SearchDirection::Forward, lineInfo.columnOffsets.first, lineInfo.columnOffsets.second, [&](const std::shared_ptr<RangeMarker>& marker) {
+
+                // Don't show hidden markers 
+                if (marker->displayType == RangeMarkerDisplayType::Hidden)
+                {
+                    return true;
+                }
+
                 auto sel = marker->range;
                 if (marker->ContainsLocation(ch))
                 {
@@ -714,12 +789,13 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
                         }
                     }
                 }
-            }
+                return true;
+            });
 
             // Draw the visual selection marker second
             if (IsActiveWindow())
             {
-                if (GetBuffer().GetMode()->GetEditorMode() == EditorMode::Visual)
+                if (GetBuffer().HasSelection())
                 {
                     auto sel = m_pBuffer->GetSelection();
                     if (sel.ContainsLocation(ch) && !hiddenChar)
@@ -732,6 +808,8 @@ bool ZepWindow::DisplayLine(SpanInfo& lineInfo, int displayPass)
         // Second pass, characters
         else
         {
+            DrawLineWidgets(lineInfo);
+
             if (!hiddenChar || m_windowFlags & WindowFlags::ShowCR)
             {
                 auto centerChar = NVec2f(screenPosX + textSize.x / 2, ToWindowY(lineInfo.spanYPx) + textSize.y / 2);
@@ -905,10 +983,11 @@ void ZepWindow::DisableToolTipTillMove()
 void ZepWindow::SetBuffer(ZepBuffer* pBuffer)
 {
     assert(pBuffer);
+
     m_pBuffer = pBuffer;
     m_layoutDirty = true;
     m_bufferOffsetYPx = 0;
-    m_bufferCursor = pBuffer->Clamp(pBuffer->GetLastLocation());
+    m_bufferCursor = pBuffer->Clamp(pBuffer->GetLastEditLocation());
     m_lastCursorColumn = 0;
     m_cursorMoved = false;
 }
@@ -1200,8 +1279,12 @@ void ZepWindow::Display()
             return ret;
         };
 
-        for (auto& marker : m_pBuffer->GetRangeMarkers())
-        {
+        m_pBuffer->ForEachMarker(RangeMarkerType::All, SearchDirection::Forward, cursorLine.columnOffsets.first, cursorLine.columnOffsets.second, [&](const std::shared_ptr<RangeMarker>& marker) {
+            if (marker->displayType == RangeMarkerDisplayType::Hidden)
+            {
+                return true;
+            }
+
             auto sel = marker->range;
             if (marker->displayType & RangeMarkerDisplayType::CursorTip)
             {
@@ -1218,6 +1301,15 @@ void ZepWindow::Display()
                     PlaceToolTip(tipPos(*marker), marker->tipPos, 2, marker);
                 }
             }
+            return true;
+        });
+    }
+    else
+    {
+        // No hanging tooltips if the markers on the page have gone
+        if (m_pBuffer->GetRangeMarkers(RangeMarkerType::Message).empty())
+        {
+            m_toolTips.clear();
         }
     }
 
@@ -1266,6 +1358,15 @@ void ZepWindow::Display()
 }
 
 // *** Motions ***
+void ZepWindow::MoveToBufferLine(long line, LineLocation clampLocation)
+{
+    long start, end;
+    m_pBuffer->GetLineOffsets(line, start, end);
+
+    auto targetDisplayCursor = BufferToDisplay(start);
+    MoveCursorY(targetDisplayCursor.y - BufferToDisplay().y, clampLocation);
+}
+
 void ZepWindow::MoveCursorY(int yDistance, LineLocation clampLocation)
 {
     UpdateLayout();
@@ -1307,6 +1408,12 @@ void ZepWindow::MoveCursorY(int yDistance, LineLocation clampLocation)
     BufferLocation clampOffset = line.columnOffsets.second;
     switch (clampLocation)
     {
+    case LineLocation::LineBegin:
+        clampOffset = line.columnOffsets.first;
+        break;
+    case LineLocation::LineFirstGraphChar:
+        clampOffset = line.columnOffsets.first;
+        break;
     case LineLocation::BeyondLineEnd:
         clampOffset = line.columnOffsets.second;
         break;
@@ -1332,7 +1439,7 @@ void ZepWindow::MoveCursorY(int yDistance, LineLocation clampLocation)
     m_cursorMoved = true;
     GetEditor().ResetCursorTimer();
 
-    m_pBuffer->SetLastLocation(m_bufferCursor);
+    m_pBuffer->SetLastEditLocation(m_bufferCursor);
 }
 
 NVec2i ZepWindow::BufferToDisplay()

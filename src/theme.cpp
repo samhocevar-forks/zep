@@ -51,7 +51,7 @@ void ZepTheme::SetDarkTheme()
     m_colors[ThemeColor::LineNumberActive] = NVec4f(.13f, 1.0f, .13f, 1.0f);
     m_colors[ThemeColor::CursorNormal] = NVec4f(130.0f / 255.0f, 140.0f / 255.0f, 230.0f / 255.0f, 1.0f);
     m_colors[ThemeColor::CursorInsert] = NVec4f(1.0f, 1.0f, 1.0f, .9f);
-    m_colors[ThemeColor::CursorLineBackground] = NVec4f(.2f, .2f, .2f, 1.0f);
+    m_colors[ThemeColor::CursorLineBackground] = NVec4f(.25f, .25f, .25f, 1.0f);
     m_colors[ThemeColor::AirlineBackground] = NVec4f(.15f, .15f, .15f, 1.0f);
     m_colors[ThemeColor::Light] = NVec4f(1.0f);
     m_colors[ThemeColor::Dark] = NVec4f(0.0f, 0.0f, 0.0f, 1.0f);
@@ -71,9 +71,10 @@ void ZepTheme::SetDarkTheme()
     m_colors[ThemeColor::Warning] = NVec4f(0.15f, .2f, .65f, 1.0f);
     m_colors[ThemeColor::Info] = NVec4f(0.15f, .6f, .15f, 1.0f);
     
+    m_colors[ThemeColor::WidgetBorder] = NVec4f(.5f, .5f, .5f, 1.0f);
     m_colors[ThemeColor::WidgetActive] = m_colors[ThemeColor::TabActive];
     m_colors[ThemeColor::WidgetInactive] = m_colors[ThemeColor::TabInactive];
-    m_colors[ThemeColor::WidgetBackground] = m_colors[ThemeColor::AirlineBackground] + NVec4f(.1f, .1f, .1f, 0.0f);
+    m_colors[ThemeColor::WidgetBackground] = NVec4f(.2f, .2f, .2f, 1.0f);
 }
 
 void ZepTheme::SetLightTheme()
@@ -111,7 +112,11 @@ void ZepTheme::SetLightTheme()
    
     m_colors[ThemeColor::WidgetActive] = m_colors[ThemeColor::TabActive];
     m_colors[ThemeColor::WidgetInactive] = m_colors[ThemeColor::TabInactive];
-    m_colors[ThemeColor::WidgetBackground] = m_colors[ThemeColor::AirlineBackground] - NVec4f(.1f, .1f, .1f, 0.0f);
+    
+    m_colors[ThemeColor::WidgetBorder] = NVec4f(.5f, .5f, .5f, 1.0f);
+    m_colors[ThemeColor::WidgetActive] = m_colors[ThemeColor::TabActive];
+    m_colors[ThemeColor::WidgetInactive] = m_colors[ThemeColor::TabInactive];
+    m_colors[ThemeColor::WidgetBackground] = NVec4f(.8f, .8f, .8f, 1.0f);
 }
 
 ThemeColor ZepTheme::GetUniqueColor(uint32_t index) const

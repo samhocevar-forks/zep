@@ -133,7 +133,7 @@ private:
     void ResetCommand();
     void Init();
     bool GetCommand(CommandContext& context);
-    bool HandleExCommand(const std::string& command, const char key);
+    bool HandleExCommand(std::string command, const char key);
 
     std::string m_currentCommand;
     std::string m_lastCommand;
@@ -146,6 +146,9 @@ private:
     bool m_pendingEscape = false;
     timer m_insertEscapeTimer;
     VimSettings m_settings;
+
+    BufferLocation m_exCommandStartLocation = 0;
+    SearchDirection m_lastSearchDirection = SearchDirection::Forward;
 };
 
 } // namespace Zep

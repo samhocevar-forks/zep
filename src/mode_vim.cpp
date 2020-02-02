@@ -9,6 +9,7 @@
 #include "zep/window.h"
 
 #include "zep/mcommon/animation/timer.h"
+#include "zep/mcommon/logger.h"
 #include "zep/mcommon/string/stringutils.h"
 
 // Note:
@@ -60,6 +61,8 @@
 // ci[({})]"'
 // ct[char]/dt[char] Change to and delete to
 // vi[Ww], va[Ww] Visual inner and word selections
+// f[char] find on line
+// /[string] find in file, 'n' find next
 
 namespace Zep
 {
@@ -127,17 +130,17 @@ void CommandContext::UpdateRegisters()
         std::string str = std::string(buffer.GetText().begin() + beginRange, buffer.GetText().begin() + endRange);
         while (!registers.empty())
         {
+            auto& ed = owner.GetEditor();
+
             // Capital letters append to registers instead of replacing them
             if (registers.top() >= 'A' && registers.top() <= 'Z')
             {
-                auto chlow = std::tolower(registers.top());
-                owner.GetEditor().GetRegister((const char)chlow).text += str;
-                owner.GetEditor().GetRegister((const char)chlow).lineWise = (op == CommandOperation::CopyLines);
+                auto chlow = (char)std::tolower(registers.top());
+                ed.SetRegister(chlow, Register(ed.GetRegister(chlow).text + str, (op == CommandOperation::CopyLines)));
             }
             else
             {
-                owner.GetEditor().GetRegister(registers.top()).text = str;
-                owner.GetEditor().GetRegister(registers.top()).lineWise = (op == CommandOperation::CopyLines);
+                ed.SetRegister(registers.top(), Register(str, op == CommandOperation::CopyLines));
             }
             registers.pop();
         }
@@ -155,7 +158,7 @@ void CommandContext::GetCommandAndCount()
     std::string command2;
 
     auto itr = commandText.begin();
-    while (itr != commandText.end() && std::isdigit(*itr))
+    while (itr != commandText.end() && std::isdigit((unsigned char)*itr))
     {
         count1 += *itr;
         itr++;
@@ -170,7 +173,7 @@ void CommandContext::GetCommandAndCount()
         if (*itr == 'f' || *itr == 'F' || *itr == 'c' || *itr == 'r')
         {
             while (itr != commandText.end()
-                && std::isgraph(*itr))
+                && std::isgraph(ToASCII(*itr)))
             {
                 command1 += *itr;
                 itr++;
@@ -179,7 +182,7 @@ void CommandContext::GetCommandAndCount()
         else
         {
             while (itr != commandText.end()
-                && std::isgraph(*itr) && !std::isdigit(*itr))
+                && std::isgraph(ToASCII(*itr)) && !std::isdigit(ToASCII(*itr)))
             {
                 command1 += *itr;
                 itr++;
@@ -188,10 +191,10 @@ void CommandContext::GetCommandAndCount()
     }
 
     // If not a register target, then another count
-    if (command1[0] != '\"' && command1[0] != ':' && command1[0] != '/')
+    if (command1[0] != '\"' && command1[0] != ':' && command1[0] != '/' && command1[0] != '?')
     {
         while (itr != commandText.end()
-            && std::isdigit(*itr))
+            && std::isdigit(ToASCII(*itr)))
         {
             count2 += *itr;
             itr++;
@@ -199,7 +202,7 @@ void CommandContext::GetCommandAndCount()
     }
 
     while (itr != commandText.end()
-        && (std::isgraph(*itr) || *itr == ' '))
+        && (std::isgraph(ToASCII(*itr)) || *itr == ' '))
     {
         command2 += *itr;
         itr++;
@@ -331,12 +334,19 @@ void ZepMode_Vim::SwitchMode(EditorMode mode)
         mode = EditorMode::Normal;
     }
 
+    // When leaving Ex mode, reset search markers
+    if (m_currentMode == EditorMode::Ex)
+    {
+        GetCurrentWindow()->GetBuffer().HideMarkers(RangeMarkerType::Search);
+    }
+
     m_currentMode = mode;
     switch (mode)
     {
     case EditorMode::Normal:
     {
         GetCurrentWindow()->SetCursorType(CursorType::Normal);
+        GetCurrentWindow()->GetBuffer().ClearSelection();
         ClampCursorForMode();
         ResetCommand();
     }
@@ -344,13 +354,22 @@ void ZepMode_Vim::SwitchMode(EditorMode mode)
     case EditorMode::Insert:
         m_insertBegin = GetCurrentWindow()->GetBufferCursor();
         GetCurrentWindow()->SetCursorType(CursorType::Insert);
+        GetCurrentWindow()->GetBuffer().ClearSelection();
         m_pendingEscape = false;
         break;
     case EditorMode::Visual:
+    {
         GetCurrentWindow()->SetCursorType(CursorType::Visual);
         ResetCommand();
         m_pendingEscape = false;
-        break;
+    }
+    break;
+    case EditorMode::Ex:
+    {
+        GetCurrentWindow()->SetCursorType(CursorType::Hidden);
+        m_pendingEscape = false;
+    }
+    break;
     default:
     case EditorMode::None:
         break;
@@ -435,7 +454,7 @@ bool ZepMode_Vim::GetOperationRange(const std::string& op, EditorMode mode, Buff
     return beginRange != -1;
 }
 
-bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
+bool ZepMode_Vim::HandleExCommand(std::string strCommand, const char key)
 {
     if (key == ExtKeys::BACKSPACE && !strCommand.empty())
     {
@@ -443,10 +462,17 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
     }
     else
     {
-        if (std::isgraph(key) || std::isblank(key))
+        if (std::isgraph(ToASCII(key)) || std::isblank(ToASCII(key)))
         {
             m_currentCommand += char(key);
         }
+    }
+
+    // Deleted and swapped out of Ex mode
+    if (m_currentCommand.empty())
+    {
+        GetEditor().GetActiveTabWindow()->GetActiveWindow()->SetBufferCursor(m_exCommandStartLocation);
+        return true;
     }
 
     if (key == ExtKeys::RETURN)
@@ -490,10 +516,6 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                     auto pBuffer = GetEditor().GetFileBuffer(fname);
                     pTab->AddWindow(pBuffer, nullptr, true);
                 }
-            }
-            else
-            {
-                pTab->AddWindow(GetEditor().GetEmptyBuffer("Empty"), nullptr, true);
             }
             GetEditor().SetCurrentTabWindow(pTab);
         }
@@ -576,6 +598,12 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 GetEditor().GetActiveTabWindow()->CloseActiveWindow();
             }
         }
+        else if (strCommand.find(":ZTestFloatSlider") == 0)
+        {
+            auto line = buffer.GetBufferLine(bufferCursor);
+            auto pSlider = std::make_shared<FloatSlider>(GetEditor(), 4);
+            buffer.AddLineWidget(line, pSlider);
+        }
         else if (strCommand.find(":ZTestMarkers") == 0)
         {
             int markerType = 0;
@@ -587,7 +615,7 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
             auto spMarker = std::make_shared<RangeMarker>();
             long start, end;
 
-            if (m_currentMode == EditorMode::Visual)
+            if (GetCurrentWindow()->GetBuffer().HasSelection())
             {
                 auto range = GetCurrentWindow()->GetBuffer().GetSelection();
                 start = range.first;
@@ -679,6 +707,15 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                 {
                     std::string displayText = editor_buffer->GetName();
                     displayText = string_replace(displayText, "\n", "^J");
+                    if (editor_buffer->IsHidden())
+                    {
+                        str << "h";
+                    }
+                    else
+                    {
+                        str << " ";
+                    }
+
                     if (&GetCurrentWindow()->GetBuffer() == editor_buffer.get())
                     {
                         str << "*";
@@ -687,6 +724,7 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
                     {
                         str << " ";
                     }
+
                     if (editor_buffer->TestFlags(FileFlags::Dirty))
                     {
                         str << "+";
@@ -732,6 +770,67 @@ bool ZepMode_Vim::HandleExCommand(const std::string& strCommand, const char key)
         m_currentCommand.clear();
         return true;
     }
+    else if (!m_currentCommand.empty() && m_currentCommand[0] == '/' || m_currentCommand[0] == '?')
+    {
+        // TODO: Busy editing the search string; do the search
+        if (m_currentCommand.length() > 0)
+        {
+            auto pWindow = GetEditor().GetActiveTabWindow()->GetActiveWindow();
+            auto& buffer = pWindow->GetBuffer();
+            auto searchString = m_currentCommand.substr(1);
+
+            buffer.ClearRangeMarkers(RangeMarkerType::Search);
+
+            uint32_t numMarkers = 0;
+            BufferLocation start = 0;
+
+            if (!searchString.empty())
+            {
+                static const uint32_t MaxMarkers = 1000;
+                while (numMarkers < MaxMarkers)
+                {
+                    auto found = buffer.Find(start, (utf8*)& searchString[0], (utf8*)& searchString[searchString.length()]);
+                    if (found == InvalidOffset)
+                    {
+                        break;
+                    }
+
+                    start = found + 1;
+
+                    auto spMarker = std::make_shared<RangeMarker>();
+                    spMarker->backgroundColor = ThemeColor::VisualSelectBackground;
+                    spMarker->textColor = ThemeColor::Text;
+                    spMarker->range = BufferRange(found, BufferLocation(found + searchString.length()));
+                    spMarker->displayType = RangeMarkerDisplayType::Background;
+                    spMarker->markerType = RangeMarkerType::Search;
+                    buffer.AddRangeMarker(spMarker);
+
+                    numMarkers++;
+                }
+            }
+
+            SearchDirection dir = (m_currentCommand[0] == '/') ? SearchDirection::Forward : SearchDirection::Backward;
+            m_lastSearchDirection = dir;
+
+            // Find the one on or in front of the cursor, in either direction.
+            auto startLocation = m_exCommandStartLocation;
+            if (dir == SearchDirection::Forward)
+                startLocation--;
+            else
+                startLocation++;
+
+            auto pMark = buffer.FindNextMarker(startLocation, dir, RangeMarkerType::Search);
+            if (pMark)
+            {
+                pWindow->SetBufferCursor(pMark->range.first);
+                pMark->backgroundColor = ThemeColor::Info;
+            }
+            else
+            {
+                pWindow->SetBufferCursor(m_exCommandStartLocation);
+            }
+        }
+    }
     return false;
 }
 
@@ -742,7 +841,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
 
     // CTRL + keys common to modes
     bool needMoreChars = false;
-    if ((context.modifierKeys & ModifierKey::Ctrl) && HandleGlobalCtrlCommand(context.command, context.modifierKeys, needMoreChars))
+    if (HandleGlobalCommand(context.commandText, context.modifierKeys, needMoreChars))
     {
         if (needMoreChars)
         {
@@ -940,7 +1039,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         }
     }
     else if (context.command == "J")
-    { 
+    {
         // Delete the CR (and thus join lines)
         context.beginRange = context.buffer.GetLinePos(context.bufferCursor, LineLocation::LineCRBegin);
         context.endRange = context.buffer.GetLinePos(context.bufferCursor, LineLocation::BeyondLineEnd);
@@ -990,7 +1089,7 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         else
         {
             // Don't allow x to delete beyond the end of the line
-            if (context.command != "x" || std::isgraph(context.buffer.GetText()[loc]) || std::isblank(context.buffer.GetText()[loc]))
+            if (context.command != "x" || std::isgraph(ToASCII(context.buffer.GetText()[loc])) || std::isblank(ToASCII(context.buffer.GetText()[loc])))
             {
                 context.beginRange = loc;
                 context.endRange = std::min(context.buffer.GetLinePos(loc, LineLocation::LineCRBegin),
@@ -1475,6 +1574,24 @@ bool ZepMode_Vim::GetCommand(CommandContext& context)
         }
         context.commandResult.flags |= CommandResultFlags::NeedMoreChars;
     }
+    else if (context.command[0] == 'n')
+    {
+        auto pMark = buffer.FindNextMarker(context.bufferCursor, m_lastSearchDirection, RangeMarkerType::Search);
+        if (pMark)
+        {
+            GetCurrentWindow()->SetBufferCursor(pMark->range.first);
+        }
+        return true;
+    }
+    else if (context.command[0] == 'N')
+    {
+        auto pMark = buffer.FindNextMarker(context.bufferCursor, m_lastSearchDirection == SearchDirection::Forward ? SearchDirection::Backward : SearchDirection::Forward, RangeMarkerType::Search);
+        if (pMark)
+        {
+            GetCurrentWindow()->SetBufferCursor(pMark->range.first);
+        }
+        return true;
+    }
     else if (context.lastKey == ExtKeys::RETURN)
     {
         if (context.mode == EditorMode::Normal)
@@ -1581,31 +1698,43 @@ void ZepMode_Vim::AddKeyPress(uint32_t key, uint32_t modifierKeys)
     // Reset command text - we will update it later
     GetEditor().SetCommandText("");
 
-    if (m_currentMode == EditorMode::Normal || m_currentMode == EditorMode::Visual)
+    if (m_currentMode == EditorMode::Normal || m_currentMode == EditorMode::Visual || m_currentMode == EditorMode::Ex)
     {
         // Escape wins all
         if (key == ExtKeys::ESCAPE)
         {
+            if (m_currentMode == EditorMode::Ex)
+            {
+                // Bailed out of ex mode; reset the start location
+                GetCurrentWindow()->SetBufferCursor(m_exCommandStartLocation);
+            }
             SwitchMode(EditorMode::Normal);
             return;
         }
 
         // Update the typed command
         // TODO: Cursor keys on the command line
-        if (key == ':' || m_currentCommand[0] == ':' || key == '/' || m_currentCommand[0] == '/')
+        // TODO: Clean this up.
+        if (key == ':' || m_currentCommand[0] == ':' || key == '/' || m_currentCommand[0] == '/' || m_currentCommand[0] == '?' || key == '?')
         {
+            if (m_currentMode != EditorMode::Ex)
+            {
+                m_exCommandStartLocation = GetCurrentWindow()->GetBufferCursor();
+                SwitchMode(EditorMode::Ex);
+            }
             if (HandleExCommand(m_currentCommand, (const char)key))
             {
                 if (GetCurrentWindow())
                 {
                     GetEditor().ResetCursorTimer();
                 }
+                SwitchMode(EditorMode::Normal);
                 return;
             }
         }
 
         // ... and show it in the command bar if desired
-        if (m_currentCommand[0] == ':' || m_currentCommand[0] == '/' || m_settings.ShowNormalModeKeyStrokes)
+        if (m_currentMode == EditorMode::Ex || m_settings.ShowNormalModeKeyStrokes)
         {
             GetEditor().SetCommandText(m_currentCommand);
             return;
