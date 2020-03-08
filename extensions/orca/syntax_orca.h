@@ -17,7 +17,7 @@ public:
     virtual void UpdateSyntax() override;
     virtual SyntaxResult GetSyntaxAt(long index) const override;
 private:
-    std::vector<Mark> m_markBuffer;
+    std::vector<uint8_t> m_stateBuffer;
 };
 
 } // namespace Zep

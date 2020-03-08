@@ -209,11 +209,49 @@ SyntaxResult ZepSyntax_Orca::GetSyntaxAt(long index) const
 void ZepSyntax_Orca::UpdateSyntax()
 {
     auto& buffer = m_buffer.GetText();
+    m_syntax.resize(buffer.size());
+    m_stateBuffer.assign(buffer.size(), 0);
 
     std::unordered_map<uint8_t, int> outputOpCount;
     outputOpCount[':'] = 6;
 
-    m_syntax.resize(buffer.size());
+    using fnMark = std::function<void(ByteIndex)>;
+
+    auto fnEast = [&](ByteIndex i, uint8_t state, int count = 1) {
+        while (count > 0 && buffer[i + (ByteIndex)1] != '\n' && buffer[i + (ByteIndex)1] != 0)
+        {
+            i++;
+            count--;
+        }
+        if (count == 0)
+        {
+            m_stateBuffer[i] |= state;
+        }
+    };
+    
+    auto fnWest = [&](ByteIndex i, uint8_t state, int count = 1) {
+        while (count > 0 && i > 0 && buffer[i - (ByteIndex)1] != '\n')
+        {
+            i--;
+            count--;
+        }
+        if (count == 0)
+        {
+            m_stateBuffer[i] |= state;
+        }
+    };
+    
+
+    std::unordered_map<uint8_t, fnMark> fnMarkers;
+    fnMarkers['A'] = [&](ByteIndex i) {
+        fnEast(i, 1);
+        fnWest(i, 1);
+    };
+    fnMarkers['X'] = [&](ByteIndex i) {
+        fnEast(i, 1);
+        fnWest(i, 1);
+    };
+
     ByteIndex i = 0;
     for (;;)
     {
@@ -248,7 +286,14 @@ void ZepSyntax_Orca::UpdateSyntax()
         }
 
         bool flash = false;
-        if (buffer[i] >= 'A' && buffer[i] <= 'Z')
+
+        if (m_stateBuffer[i] == 1)
+        {
+            // Input
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Number;
+        }
+        else if (buffer[i] >= 'A' && buffer[i] <= 'Z')
         {
             m_syntax[i].background = ThemeColor::Background;
             m_syntax[i].foreground = ThemeColor::Keyword;
@@ -271,19 +316,27 @@ void ZepSyntax_Orca::UpdateSyntax()
             i++;
         }
 
-        // Last check
-        auto itrOut = outputOpCount.find(buffer[i]);
-        if (itrOut != outputOpCount.end())
-        { 
-            int count = itrOut->second;
-            while (count > 0 && buffer[i] != 0 && buffer[i] != '\n')
+        auto itrMark = fnMarkers.find(buffer[i]);
+        if (itrMark != fnMarkers.end())
+        {
+            itrMark->second(i);
+        }
+        else
+        {
+            // Last check
+            auto itrOut = outputOpCount.find(buffer[i]);
+            if (itrOut != outputOpCount.end())
             {
-                m_syntax[i].background = ThemeColor::Background;
-                m_syntax[i].foreground = ThemeColor::String;
-                i++;
-                count--;
+                int count = itrOut->second;
+                while (count > 0 && buffer[i] != 0 && buffer[i] != '\n')
+                {
+                    m_syntax[i].background = ThemeColor::Background;
+                    m_syntax[i].foreground = ThemeColor::String;
+                    i++;
+                    count--;
+                }
+                continue;
             }
-            continue;
         }
 
         if (buffer[i] == 0)
