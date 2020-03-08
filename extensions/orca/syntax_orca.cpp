@@ -22,6 +22,7 @@ ZepSyntax_Orca::ZepSyntax_Orca(ZepBuffer& buffer,
     m_adornments.clear();
 }
 
+/*
 typedef enum
 {
     Glyph_class_unknown,
@@ -72,7 +73,6 @@ static Glyph_class glyph_class_of(Glyph glyph)
     return Glyph_class_unknown;
 }
 
-/*
 static attr_t term_attrs_of_cell(Glyph g, Mark m) {
   Glyph_class gclass = glyph_class_of(g);
   attr_t attr = A_normal;
@@ -119,12 +119,16 @@ static attr_t term_attrs_of_cell(Glyph g, Mark m) {
   }
   return attr;
 }
-
 */
 
 NVec4f cyan = NVec4f(0, 1.0f, 1.0f, 1.0f);
 SyntaxResult ZepSyntax_Orca::GetSyntaxAt(long index) const
 {
+    SyntaxResult res;
+    res.foreground = m_syntax[index].foreground;
+    res.background = m_syntax[index].background;
+    return res;
+    /*
     auto& buffer = m_buffer.GetText();
     Glyph g = buffer[index];
 
@@ -198,13 +202,95 @@ SyntaxResult ZepSyntax_Orca::GetSyntaxAt(long index) const
         data.foreground = ThemeColor::Custom;
         data.customForegroundColor = cyan;
     }
-    */
     return data;
+    */
 }
 
 void ZepSyntax_Orca::UpdateSyntax()
 {
     auto& buffer = m_buffer.GetText();
+
+    std::unordered_map<uint8_t, int> outputOpCount;
+    outputOpCount[':'] = 6;
+
+    m_syntax.resize(buffer.size());
+    ByteIndex i = 0;
+    for (;;)
+    {
+        // Skip spaces and newlines
+        while (buffer[i] != 0 && buffer[i] == ' ' || buffer[i] == '.' || buffer[i] == '\n')
+        {
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Whitespace;
+            i++;
+        }
+
+        // Skip comments
+        if (buffer[i] == '#')
+        {
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Comment;
+            i++;
+
+            while (buffer[i] != 0 && buffer[i] != '\n')
+            {
+                m_syntax[i].background = ThemeColor::Background;
+                m_syntax[i].foreground = ThemeColor::Comment;
+
+                if (buffer[i] == '#')
+                {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            continue;
+        }
+
+        bool flash = false;
+        if (buffer[i] >= 'A' && buffer[i] <= 'Z')
+        {
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Keyword;
+        }
+        else if (buffer[i] >= 'a' && buffer[i] <= 'z')
+        {
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Identifier;
+        }
+        else if (buffer[i] >= '0' && buffer[i] <= '9')
+        {
+            m_syntax[i].background = ThemeColor::Background;
+            m_syntax[i].foreground = ThemeColor::Number;
+        }
+        else if (buffer[i] == '*')
+        {
+            m_syntax[i].background = ThemeColor::FlashColor;
+            m_syntax[i].foreground = ThemeColor::Normal;
+            flash = true;
+            i++;
+        }
+
+        // Last check
+        auto itrOut = outputOpCount.find(buffer[i]);
+        if (itrOut != outputOpCount.end())
+        { 
+            int count = itrOut->second;
+            while (count > 0 && buffer[i] != 0 && buffer[i] != '\n')
+            {
+                m_syntax[i].background = ThemeColor::Background;
+                m_syntax[i].foreground = ThemeColor::String;
+                i++;
+                count--;
+            }
+            continue;
+        }
+
+        if (buffer[i] == 0)
+            break;
+
+        i++;
+    }
 
     // We don't do anything in orca mode, we get dynamically because Orca tells us the colors
     m_targetChar = long(0);

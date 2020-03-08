@@ -166,10 +166,11 @@ void Orca::WriteToBuffer(ZepBuffer* pBuffer)
         }
     }
 
+    // Special syntax trigger, since we do things differently with orca
     auto pSyntax = dynamic_cast<ZepSyntax_Orca*>(pBuffer->GetSyntax());
     if (pSyntax)
     {
-        pSyntax->SetMarkBuffer(m_mbuf_r.buffer, (uint32_t)m_mbuf_r.capacity);
+        pSyntax->UpdateSyntax();
     }
     
     m_updated.store(false);
