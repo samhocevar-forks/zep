@@ -4,6 +4,8 @@
 #include <memory>
 
 #include <repl/mode_repl.h>
+#include <orca/mode_orca.h>
+
 
 QT_FORWARD_DECLARE_CLASS(QDockWidget)
 QT_FORWARD_DECLARE_CLASS(QMenu)
@@ -19,6 +21,5 @@ public:
 
     virtual std::string ReplParse(const std::string& str) override;
     virtual bool ReplIsFormComplete(const std::string& str, int& indent) override;
-
 private:
 };

@@ -49,10 +49,9 @@ include(cmake/all.cmake)
 include(m3rdparty/cmake/copy_files.cmake)
 
 # The main library
-include(${ZEP_ROOT}/extensions/CMakeLists.txt)
-include(src/CMakeLists.txt)
-
-include (tests/CMakeLists.txt)
+add_subdirectory(extensions)
+add_subdirectory(src)
+add_subdirectory (tests)
 
 # Demos require example interpreter and other 3rdparty
 IF (BUILD_DEMOS)

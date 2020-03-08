@@ -29,6 +29,7 @@ set(DEMO_SOURCE_QT
     ${ZEP_ROOT}/include/zep/qt/zepdisplay_qt.h
     ${ZEP_ROOT}/include/zep/qt/zepwidget_qt.h
     ${ZEP_ROOT}/include/zep/qt/common_qt.h
+    ${ZEP_EXTENSION_SRC}
 )
 
 # Create the Qt version of the app

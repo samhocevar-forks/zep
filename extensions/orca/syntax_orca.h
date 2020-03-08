@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zep/syntax.h"
+#include "orca/mode_orca.h"
 
 namespace Zep
 {
@@ -15,6 +16,8 @@ public:
 
     virtual void UpdateSyntax() override;
     virtual SyntaxResult GetSyntaxAt(long index) const override;
+private:
+    std::vector<Mark> m_markBuffer;
 };
 
 } // namespace Zep

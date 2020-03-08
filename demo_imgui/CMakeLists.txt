@@ -20,6 +20,7 @@ IF (BUILD_DEMOS AND BUILD_IMGUI)
         ${ZEP_ROOT}/demo_imgui/CMakeLists.txt
         ${ZEP_ROOT}/include/zep/imgui/display_imgui.h
         ${ZEP_ROOT}/include/zep/imgui/editor_imgui.h
+        ${ZEP_EXTENSION_SRC}
         )
 
     add_executable (${DEMO_NAME} WIN32 # Win32 ignored on windows 
@@ -82,3 +83,4 @@ endif()
     source_group (Zep FILES ${DEMO_SOURCE_IMGUI})
 
 ENDIF() # IMGUI
+

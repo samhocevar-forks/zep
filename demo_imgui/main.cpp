@@ -49,8 +49,8 @@
 #include "zep/theme.h"
 #include "zep/window.h"
 
-#include "repl/mode_repl.h"
 #include "orca/mode_orca.h"
+#include "repl/mode_repl.h"
 
 #include "zep/regress.h"
 
