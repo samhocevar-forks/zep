@@ -15,7 +15,7 @@ public:
     virtual ~ZepSyntaxAdorn_RainbowBrackets();
 
     void Notify(std::shared_ptr<ZepMessage> payload) override;
-    virtual SyntaxData GetSyntaxAt(long offset, bool& found) const override;
+    virtual SyntaxResult GetSyntaxAt(long offset, bool& found) const override;
 
     virtual void Clear(long start, long end);
     virtual void Insert(long start, long end);
@@ -38,7 +38,7 @@ private:
         bool is_open;
         bool valid = true;
     };
-    std::map<BufferLocation, Bracket> m_brackets;
+    std::map<ByteIndex, Bracket> m_brackets;
 };
 
 } // namespace Zep

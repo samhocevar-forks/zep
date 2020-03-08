@@ -6,6 +6,8 @@
 
 #include <QKeyEvent>
 #include <QDesktopWidget>
+#include <QDebug>
+#include <QClipboard>
 
 #include "zep/editor.h"
 #include "zep/mode.h"
@@ -45,20 +47,32 @@ public:
         m_spEditor.reset();
     }
 
-    void Notify(std::shared_ptr<ZepMessage> message)
+    virtual void Notify(std::shared_ptr<ZepMessage> message) override
     {
         if (message->messageId == Msg::RequestQuit)
         {
             qApp->quit();
         }
+        else if (message->messageId == Msg::GetClipBoard)
+        {
+            QClipboard* pClip = QApplication::clipboard();
+            message->str = pClip->text().toUtf8().data();
+            message->handled = true;
+        }
+        else if (message->messageId == Msg::SetClipBoard)
+        {
+            QClipboard* pClip = QApplication::clipboard();
+            pClip->setText(QString::fromUtf8(message->str.c_str()));
+            message->handled = true;
+        }
     }
 
-    void resizeEvent(QResizeEvent* pResize)
+    virtual void resizeEvent(QResizeEvent* pResize) override
     {
         m_spEditor->SetDisplayRegion(NVec2f(0.0f, 0.0f), NVec2f(pResize->size().width(), pResize->size().height()));
     }
 
-    void paintEvent(QPaintEvent* pPaint)
+    virtual void paintEvent(QPaintEvent* pPaint) override
     {
         (void)pPaint;
 
@@ -73,7 +87,7 @@ public:
         ((ZepDisplay_Qt&)m_spEditor->GetDisplay()).SetPainter(nullptr);
     }
 
-    void keyPressEvent(QKeyEvent* ev)
+    virtual void keyPressEvent(QKeyEvent* ev) override
     {
         uint32_t mod = 0;
         auto pMode = m_spEditor->GetActiveTabWindow()->GetActiveWindow()->GetBuffer().GetMode();
@@ -154,14 +168,19 @@ public:
         }
         else
         {
-            QString input = ev->text();
-            for (auto& i : input)
+            auto input = ev->text().toUtf8();
+            if (!input.isEmpty())
             {
-                auto ch = i.toLatin1();
-                if (ch != 0)
+                uint8_t* pIn = (uint8_t*)input.data();
+
+                // Convert to UTF8 uint32; not used yet
+                uint32_t dw = 0;
+                for (int i = 0; i < input.size(); i++)
                 {
-                    pMode->AddKeyPress(i.toLatin1(), mod);
+                    dw |= ((uint32_t)pIn[i]) << ((input.size() - i - 1) * 8);
                 }
+
+                pMode->AddKeyPress(dw, mod);
             }
         }
         update();
@@ -185,14 +204,14 @@ public:
         }
     }
 
-    void mousePressEvent(QMouseEvent* ev)
+    virtual void mousePressEvent(QMouseEvent* ev) override
     {
         if (m_spEditor)
         {
             m_spEditor->OnMouseDown(toNVec2f(ev->localPos()), GetMouseButton(ev));
         }
     }
-    void mouseReleaseEvent(QMouseEvent* ev)
+    virtual void mouseReleaseEvent(QMouseEvent* ev) override
     {
         (void)ev;
         if (m_spEditor)
@@ -201,12 +220,12 @@ public:
         }
     }
 
-    void mouseDoubleClickEvent(QMouseEvent* event)
+    virtual void mouseDoubleClickEvent(QMouseEvent* event) override
     {
         (void)event;
     }
 
-    void mouseMoveEvent(QMouseEvent* ev)
+    virtual void mouseMoveEvent(QMouseEvent* ev) override
     {
         if (m_spEditor)
         {

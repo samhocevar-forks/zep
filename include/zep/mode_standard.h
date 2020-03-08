@@ -11,8 +11,7 @@ public:
     ZepMode_Standard(ZepEditor& editor);
     ~ZepMode_Standard();
 
-    virtual void AddKeyPress(uint32_t key, uint32_t modifiers = 0) override;
-    virtual void Begin() override;
+    virtual void Begin(ZepWindow* pWindow) override;
 
     static const char* StaticName()
     {
@@ -24,7 +23,9 @@ public:
     }
 
 private:
-    virtual bool SwitchMode(EditorMode mode);
+    void Init();
+
+private:
     std::string keyCache;
 };
 

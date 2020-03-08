@@ -12,10 +12,10 @@ namespace Zep
 {
 
 ZepMode_Search::ZepMode_Search(ZepEditor& editor, ZepWindow& launchWindow, ZepWindow& window, const ZepPath& path)
-    : ZepMode(editor),
-    m_launchWindow(launchWindow),
-    m_window(window),
-    m_startPath(path)
+    : ZepMode(editor)
+    , m_launchWindow(launchWindow)
+    , m_window(window)
+    , m_startPath(path)
 {
 }
 
@@ -38,6 +38,10 @@ void ZepMode_Search::AddKeyPress(uint32_t key, uint32_t modifiers)
     (void)modifiers;
     if (key == ExtKeys::ESCAPE)
     {
+        // CM TODO:
+        // Note that the Repl represents the new way to do these commands; and this mode should be ported
+        // to do the same thing.  It should also use the keymapper
+
         // We choose to rearrange the window and return to the previous order here.
         // If we just delete the buffer, it would have the same effect, but the editor
         // does not currently maintain a list of window orderings; so this is a second best for now.
@@ -65,11 +69,11 @@ void ZepMode_Search::AddKeyPress(uint32_t key, uint32_t modifiers)
     {
         if (modifiers & ModifierKey::Ctrl)
         {
-            if (key == 'j')
+            if (key == 'j' || key == ExtKeys::DOWN)
             {
                 m_window.MoveCursorY(1);
             }
-            else if (key == 'k')
+            else if (key == 'k' || key == ExtKeys::UP)
             {
                 m_window.MoveCursorY(-1);
             }
@@ -89,7 +93,16 @@ void ZepMode_Search::AddKeyPress(uint32_t key, uint32_t modifiers)
                 return;
             }
         }
-        else if (key > 0 && key < 127)
+        else if (key == ExtKeys::DOWN)
+        {
+            m_window.MoveCursorY(1);
+        }
+        else if (key == ExtKeys::UP)
+        {
+            m_window.MoveCursorY(-1);
+        }
+        // TODO: UTF8
+        else if (std::isgraph(key))
         {
             m_searchTerm += char(key);
             UpdateTree();
@@ -156,13 +169,16 @@ void ZepMode_Search::GetSearchPaths(const ZepPath& path, std::vector<std::string
             "*.lsp",
             "*.scm",
             "*.cs",
-            "*.cfg"
+            "*.cfg",
+            "*.orca"
         };
     }
 }
 
-void ZepMode_Search::Begin()
+void ZepMode_Search::Begin(ZepWindow* pWindow)
 {
+    ZepMode::Begin(pWindow);
+
     m_searchTerm = "";
     GetEditor().SetCommandText(">>> ");
 
@@ -313,13 +329,9 @@ void ZepMode_Search::OpenSelection(OpenType type)
 
     auto& buffer = m_window.GetBuffer();
 
-    // Remove our window so that the inserted buffer is inserted into the previous hierarchy
-    // and not inside our search window ;)
-    // We do not kill the buffer yet.
-    GetEditor().GetActiveTabWindow()->RemoveWindow(&m_window);
     GetEditor().GetActiveTabWindow()->SetActiveWindow(&m_launchWindow);
 
-    BufferLocation count = 0;
+    ByteIndex count = 0;
     for (auto& index : m_indexTree.back()->indices)
     {
         if (count == line)
@@ -335,13 +347,13 @@ void ZepMode_Search::OpenSelection(OpenType type)
                     m_launchWindow.SetBuffer(pBuffer);
                     break;
                 case OpenType::VSplit:
-                    GetEditor().GetActiveTabWindow()->AddWindow(pBuffer, &m_launchWindow, true);
+                    GetEditor().GetActiveTabWindow()->AddWindow(pBuffer, &m_launchWindow, RegionLayoutType::HBox);
                     break;
                 case OpenType::HSplit:
-                    GetEditor().GetActiveTabWindow()->AddWindow(pBuffer, &m_launchWindow, false);
+                    GetEditor().GetActiveTabWindow()->AddWindow(pBuffer, &m_launchWindow, RegionLayoutType::VBox);
                     break;
                 case OpenType::Tab:
-                    GetEditor().AddTabWindow()->AddWindow(pBuffer, nullptr, false);
+                    GetEditor().AddTabWindow()->AddWindow(pBuffer, nullptr, RegionLayoutType::HBox);
                     break;
                 }
             }
@@ -349,7 +361,7 @@ void ZepMode_Search::OpenSelection(OpenType type)
         count++;
     }
 
-    // Removing the buffer will also kill this mode; this is the last thing we can do here
+    // Removing the buffer will also kill this mode and its window; this is the last thing we can do here
     GetEditor().RemoveBuffer(&buffer);
 }
 
@@ -442,6 +454,11 @@ void ZepMode_Search::UpdateTree()
 
     ShowTreeResult();
     GetEditor().RequestRefresh();
+}
+
+CursorType ZepMode_Search::GetCursorType() const
+{
+    return CursorType::LineMarker;
 }
 
 } // namespace Zep

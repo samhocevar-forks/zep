@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -48,13 +47,25 @@ class ZepSyntax;
 class ZepTabWindow;
 class ZepWindow;
 class ZepTheme;
-
 class ZepDisplay;
 class IZepFileSystem;
 
 struct Region;
 
-using utf8 = uint8_t;
+#define ZEP_UNUSED(var) (void)var;
+
+// Helpers 
+inline bool ZTestFlags(const uint32_t& flags, uint32_t value) { return ((flags & value) ? true : false); }
+inline uint32_t ZSetFlags(const uint32_t& flags, uint32_t value, bool set = true) { if (set) { return flags | value; } else return flags; }
+inline uint32_t ZClearFlags(const uint32_t& flags, uint32_t value) { return flags & ~value; }
+inline uint32_t ZToggleFlags(const uint32_t& flags, uint32_t value)
+{
+    if (ZTestFlags(flags, value))
+    {
+        return ZClearFlags(flags, value);
+    }
+    return ZSetFlags(flags, value);
+}
 
 namespace ZepEditorFlags
 {
@@ -62,6 +73,7 @@ enum
 {
     None = (0),
     DisableThreads = (1 << 0),
+    FastUpdate = (1 << 1)
 };
 };
 
@@ -153,7 +165,7 @@ struct Register
         , lineWise(lw)
     {
     }
-    Register(utf8* ch, bool lw = false)
+    Register(uint8_t* ch, bool lw = false)
         : text((const char*)ch)
         , lineWise(lw)
     {
@@ -178,8 +190,9 @@ struct SyntaxProvider
     tSyntaxFactory factory = nullptr;
 };
 
-const float bottomBorder = 4.0f;
-const float textBorder = 4.0f;
+const float bottomBorder = 2.0f;
+const float textBorder = 2.0f;
+const float tabSpacing = 1.0f;
 const float leftBorderChars = 3;
 
 #define DPI_VEC2(value) (value * GetEditor().GetPixelScale())
@@ -204,8 +217,28 @@ struct EditorConfig
     bool showIndicatorRegion = true;
     bool autoHideCommandRegion = true;
     bool cursorLineSolid = false;
+    bool showNormalModeKeyStrokes = false;
     float backgroundFadeTime = 60.0f;
     float backgroundFadeWait = 60.0f;
+};
+
+class ZepExCommand : public ZepComponent
+{
+public:
+    ZepExCommand(ZepEditor& editor)
+        : ZepComponent(editor)
+    {}
+    virtual ~ZepExCommand() {}
+    virtual void Run(const std::vector<std::string>& args = {}) = 0;
+    virtual const char* Name() const = 0;
+    virtual void Init() {};
+};
+
+struct TabRegionTab : public Region
+{
+    NVec4f color;
+    std::string name;
+    ZepTabWindow* pTabWindow = nullptr;
 };
 
 class ZepEditor
@@ -226,8 +259,12 @@ public:
 
     ZepMode* GetGlobalMode();
     void RegisterGlobalMode(std::shared_ptr<ZepMode> spMode);
-    void SetGlobalMode(const std::string& mode);
+    void RegisterExCommand(std::shared_ptr<ZepExCommand> spMode);
+    ZepExCommand* FindExCommand(const std::string& strName);
+    void SetGlobalMode(const std::string& currentMode);
     ZepMode* GetSecondaryMode() const;
+
+    void RegisterBufferMode(const std::string& strExtension, std::shared_ptr<ZepMode> spMode);
 
     void Display();
 
@@ -262,10 +299,8 @@ public:
     void WriteClipboard();
 
     void Notify(std::shared_ptr<ZepMessage> message);
-    uint32_t GetFlags() const
-    {
-        return m_flags;
-    }
+    uint32_t GetFlags() const;
+    void SetFlags(uint32_t flags);
 
     // Tab windows
     using tTabWindows = std::vector<ZepTabWindow*>;
@@ -277,7 +312,9 @@ public:
     void RemoveTabWindow(ZepTabWindow* pTabWindow);
     const tTabWindows& GetTabWindows() const;
 
-    ZepWindow* AddRepl();
+    void UpdateTabs();
+
+    ZepWindow* AddTree();
     ZepWindow* AddSearch();
 
     void ResetCursorTimer();
@@ -307,7 +344,7 @@ public:
     {
         return *m_pDisplay;
     }
-    
+
     IZepFileSystem& GetFileSystem() const
     {
         return *m_pFileSystem;
@@ -324,11 +361,15 @@ public:
     float GetPixelScale() const;
 
     void SetBufferSyntax(ZepBuffer& buffer) const;
+    void SetBufferMode(ZepBuffer& buffer) const;
 
-    EditorConfig GetConfig() const
+    EditorConfig& GetConfig() 
     {
         return m_config;
     }
+
+    // Helper for macros
+    ZepEditor& GetEditor() { return *this; }
 
     ThreadPool& GetThreadPool() const;
 
@@ -339,6 +380,9 @@ private:
     // Call GetBuffer publicly, to stop creation of duplicate buffers refering to the same file
     ZepBuffer* CreateNewBuffer(const std::string& bufferName);
     ZepBuffer* CreateNewBuffer(const ZepPath& path);
+
+    void InitBuffer(ZepBuffer& buffer);
+    void InitDataGrid(ZepBuffer& buffer, const NVec2i& dimensions);
 
     // Ensure there is a valid tab window and return it
     ZepTabWindow* EnsureTab();
@@ -351,10 +395,10 @@ private:
     mutable tRegisters m_registers;
 
     std::shared_ptr<ZepTheme> m_spTheme;
-    std::shared_ptr<ZepMode_Vim> m_spVimMode;
-    std::shared_ptr<ZepMode_Standard> m_spStandardMode;
     std::map<std::string, SyntaxProvider> m_mapSyntax;
-    std::map<std::string, std::shared_ptr<ZepMode>> m_mapModes;
+    std::map<std::string, std::shared_ptr<ZepMode>> m_mapGlobalModes;
+    std::map<std::string, std::shared_ptr<ZepMode>> m_mapBufferModes;
+    std::map<std::string, std::shared_ptr<ZepExCommand>> m_mapExCommands;
 
     // Blinking cursor
     timer m_cursorTimer;
@@ -383,8 +427,9 @@ private:
     std::shared_ptr<Region> m_tabContentRegion;
     std::shared_ptr<Region> m_commandRegion;
     std::shared_ptr<Region> m_tabRegion;
-    std::map<ZepTabWindow*, NRectf> m_tabRects;
     bool m_bRegionsChanged = false;
+
+    float m_tabOffsetX = 0.0f;
 
     NVec2f m_mousePos;
     float m_pixelScale = 1.0f;

@@ -10,13 +10,14 @@
 #include <thread>
 
 #include <imgui/imgui.h>
+
 #include <imgui/examples/imgui_impl_opengl3.h>
 #include <imgui/examples/imgui_impl_sdl.h>
 #include <imgui/misc/freetype/imgui_freetype.h>
 
+#include <mutils/chibi/chibi.h>
 #include <mutils/file/file.h>
 #include <mutils/logger/logger.h>
-#include <mutils/chibi/chibi.h>
 
 #include <clip/clip.h>
 #include <tclap/CmdLine.h>
@@ -47,6 +48,11 @@
 #include "zep/tab_window.h"
 #include "zep/theme.h"
 #include "zep/window.h"
+
+#include "repl/mode_repl.h"
+#include "orca/mode_orca.h"
+
+#include "zep/regress.h"
 
 #include <tfd/tinyfiledialogs.h>
 
@@ -140,7 +146,7 @@ bool ReadCommandLine(int argc, char** argv, int& exitCode)
 }
 
 // A helper struct to init the editor and handle callbacks
-struct ZepContainer : public IZepComponent, public ZepRepl
+struct ZepContainer : public IZepComponent, public IZepReplProvider
 {
     ZepContainer(const std::string& startupFilePath)
         : spEditor(std::make_unique<ZepEditor_ImGui>(ZEP_ROOT))
@@ -148,30 +154,25 @@ struct ZepContainer : public IZepComponent, public ZepRepl
 
         // File watcher not used on apple yet ; needs investigating as to why it doesn't compile/run
 #ifndef __APPLE__
-        MUtils::Watcher::Instance().AddWatch(ZEP_ROOT, [&](const ZepPath& path) {
-            if (spEditor)
-            {
-                spEditor->OnFileChanged(ZepPath(ZEP_ROOT) / path);
-            }
-        },
+        MUtils::Watcher::Instance().AddWatch(
+            ZEP_ROOT, [&](const ZepPath& path) {
+                if (spEditor)
+                {
+                    spEditor->OnFileChanged(ZepPath(ZEP_ROOT) / path);
+                }
+            },
             false);
 #endif
 
         chibi_init(scheme, SDL_GetBasePath());
 
-        fnParser = [&](const std::string& str) -> std::string {
-            auto ret = chibi_repl(scheme, NULL, str);
-            ret = RTrim(ret);
-            return ret;
-        };
-
-        fnIsFormComplete = [&](const std::string& str, int& indent)
-        {
-            return IsFormComplete(str, indent);
-        };
-
         spEditor->RegisterCallback(this);
         spEditor->SetPixelScale(GetDisplayScale());
+
+        ZepMode_Orca::Register(*spEditor);
+
+        ZepRegressExCommand::Register(*spEditor);
+        ZepReplExCommand::Register(*spEditor, this);
 
         if (!startupFilePath.empty())
         {
@@ -188,7 +189,14 @@ struct ZepContainer : public IZepComponent, public ZepRepl
         spEditor->UnRegisterCallback(this);
     }
 
-    bool IsFormComplete(const std::string& str, int& indent)
+    virtual std::string ReplParse(const std::string& str) override
+    {
+        auto ret = chibi_repl(scheme, NULL, str);
+        ret = RTrim(ret);
+        return ret;
+    }
+
+    virtual bool ReplIsFormComplete(const std::string& str, int& indent) override
     {
         int count = 0;
         for (auto& ch : str)
@@ -244,15 +252,6 @@ struct ZepContainer : public IZepComponent, public ZepRepl
         {
             clip::set_text(message->str);
             message->handled = true;
-        }
-        else if (message->messageId == Msg::HandleCommand)
-        {
-            if (message->str == ":repl")
-            {
-                GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer().SetReplProvider(this);
-                GetEditor().AddRepl();
-                message->handled = true;
-            }
         }
         else if (message->messageId == Msg::RequestQuit)
         {
@@ -374,20 +373,22 @@ int main(int argc, char** argv)
     // Setup style
     ImGui::StyleColorsDark();
 
-    // Font for editor
-    static const ImWchar ranges[] = {
-        0x0020,
-        0x00FF, // Basic Latin + Latin Supplement
-        0,
-    };
+    ImVector<ImWchar> ranges;
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(io.Fonts->GetGlyphRangesDefault()); // Add one of the default ranges
+    builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic()); // Add one of the default ranges
+    //builder.AddRanges(io.Fonts->GetGlyphRangesThai()); // Add one of the default ranges
+    ImWchar greek_range[] = { 0x300, 0x52F, 0x1f00, 0x1fff, 0, 0 };
+    builder.AddRanges(greek_range);
+    builder.BuildRanges(&ranges); // Build the final result (ordered ranges with all the unique characters submitted)
 
     ImFontConfig cfg;
     cfg.OversampleH = 3;
     cfg.OversampleV = 3;
 
-    io.Fonts->AddFontFromFileTTF((std::string(SDL_GetBasePath()) + "Cousine-Regular.ttf").c_str(), 16 * GetDisplayScale(), &cfg, ranges);
-    
-    unsigned int flags = 0;// ImGuiFreeType::NoHinting;
+    io.Fonts->AddFontFromFileTTF((std::string(SDL_GetBasePath()) + "Cousine-Regular.ttf").c_str(), 16 * GetDisplayScale(), &cfg, ranges.Data);
+
+    unsigned int flags = 0; // ImGuiFreeType::NoHinting;
     ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
 
     bool show_demo_window = false;
@@ -504,11 +505,11 @@ int main(int argc, char** argv)
                 auto pTabWindow = zep.GetEditor().GetActiveTabWindow();
                 if (ImGui::MenuItem("Horizontal Split"))
                 {
-                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), false);
+                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), RegionLayoutType::VBox);
                 }
                 else if (ImGui::MenuItem("Vertical Split"))
                 {
-                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), true);
+                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), RegionLayoutType::HBox);
                 }
                 ImGui::EndMenu();
             }
@@ -533,10 +534,6 @@ int main(int argc, char** argv)
         int w, h;
         SDL_GetWindowSize(window, &w, &h);
 
-        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        if (show_demo_window)
-            ImGui::ShowDemoWindow(&show_demo_window);
-
         // This is a bit messy; and I have no idea why I don't need to remove the menu fixed_size from the calculation!
         // The point of this code is to fill the main window with the Zep window
         // It is only done once so the user can play with the window if they want to for testing
@@ -555,7 +552,7 @@ int main(int argc, char** argv)
         auto max = ImGui::GetContentRegionAvail();
         max.x = std::max(1.0f, max.x);
         max.y = std::max(1.0f, max.y);
-        
+
         // Fill the window
         max.x = min.x + max.x;
         max.y = min.y + max.y;
@@ -565,10 +562,13 @@ int main(int argc, char** argv)
         zep.spEditor->Display();
         zep.spEditor->HandleInput();
 
-
         ImGui::End();
         ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(1);
+
+        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+        if (show_demo_window)
+            ImGui::ShowDemoWindow(&show_demo_window);
 
         // Rendering
         ImGui::Render();

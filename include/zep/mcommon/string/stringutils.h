@@ -1,9 +1,9 @@
 #pragma once
 
 #include <functional>
-#include <string>
 #include <ostream>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -116,7 +116,7 @@ struct StringId
     }
     StringId(const char* pszString);
     StringId(const std::string& str);
-    StringId(uint32_t _id)
+    explicit StringId(uint32_t _id)
     {
         id = _id;
     }
@@ -132,17 +132,21 @@ struct StringId
         return id < rhs.id;
     }
 
+    operator uint32_t() const
+    {
+        return id;
+    }
     std::string ToString() const
     {
-        auto itr = stringLookup.find(id);
-        if (itr == stringLookup.end())
+        auto itr = GetStringLookup().find(id);
+        if (itr == GetStringLookup().end())
         {
             return "murmur:" + std::to_string(id);
         }
         return itr->second;
     }
 
-    static std::unordered_map<uint32_t, std::string> stringLookup;
+    static std::unordered_map<uint32_t, std::string>& GetStringLookup();
 };
 
 inline std::ostream& operator<<(std::ostream& str, StringId id)
@@ -163,6 +167,26 @@ inline bool string_equals(const std::string& str, const std::string& str2)
 {
     return str == str2;
 }
+
+inline void string_eat_char(std::string::const_iterator& itr, std::string::const_iterator& itrEnd)
+{
+    if (itr != itrEnd)
+        itr++;
+}
+
+std::string string_slurp_if(std::string::const_iterator& itr, std::string::const_iterator itrEnd, char first, char last);
+std::string string_slurp_if(std::string::const_iterator& itr, std::string::const_iterator itrEnd, std::function<bool(char)> fnIs);
+
+inline bool utf8_is_trailing(uint8_t ch)
+{
+    return (ch >> 6) == 0x2;
+}
+
+inline long utf8_codepoint_length(uint8_t ch)
+{
+    return ((0xE5000000 >> ((ch >> 3) & 0x1e)) & 3) + 1;
+}
+
 } // namespace Zep
 
 namespace std

@@ -45,7 +45,7 @@ void ZepTheme::SetDarkTheme()
     m_colors[ThemeColor::HiddenText] = NVec4f(.9f, .1f, .1f, 1.0f);
     m_colors[ThemeColor::TabBorder] = NVec4f(.55f, .55f, .55f, 1.0f);
     m_colors[ThemeColor::TabInactive] = NVec4f(.4f, .4f, .4f, .55f);
-    m_colors[ThemeColor::TabActive] = NVec4f(.55f, .55f, .55f, 1.0f);
+    m_colors[ThemeColor::TabActive] = NVec4f(.65f, .65f, .65f, 1.0f);
     m_colors[ThemeColor::LineNumberBackground] = m_colors[ThemeColor::Background] + NVec4f(.02f, .02f, .02f, 0.0f);
     m_colors[ThemeColor::LineNumber] = NVec4f(.13f, 1.0f, .13f, 1.0f);
     m_colors[ThemeColor::LineNumberActive] = NVec4f(.13f, 1.0f, .13f, 1.0f);
@@ -63,9 +63,9 @@ void ZepTheme::SetDarkTheme()
     m_colors[ThemeColor::Comment] = NVec4f(0.0f, 1.0f, .1f, 1.0f);
     m_colors[ThemeColor::Keyword] = NVec4f(0.1f, 1.0f, 1.0f, 1.0f);
     m_colors[ThemeColor::Identifier] = NVec4f(1.0f, .75f, 0.5f, 1.0f);
-    m_colors[ThemeColor::Number] = NVec4f(0.1f, 1.0f, 1.0f, 1.0f);
+    m_colors[ThemeColor::Number] = NVec4f(1.0f, 1.0f, 0.1f, 1.0f);
     m_colors[ThemeColor::String] = NVec4f(1.0f, 0.5f, 1.0f, 1.0f);
-    m_colors[ThemeColor::Whitespace] = NVec4f(0.2f, .2f, .2f, 1.0f);
+    m_colors[ThemeColor::Whitespace] = NVec4f(0.3f, .3f, .3f, 1.0f);
     
     m_colors[ThemeColor::Error] = NVec4f(0.65f, .2f, .15f, 1.0f);
     m_colors[ThemeColor::Warning] = NVec4f(0.15f, .2f, .65f, 1.0f);
@@ -75,6 +75,8 @@ void ZepTheme::SetDarkTheme()
     m_colors[ThemeColor::WidgetActive] = m_colors[ThemeColor::TabActive];
     m_colors[ThemeColor::WidgetInactive] = m_colors[ThemeColor::TabInactive];
     m_colors[ThemeColor::WidgetBackground] = NVec4f(.2f, .2f, .2f, 1.0f);
+    
+    m_colors[ThemeColor::FlashColor] = NVec4f(.8f, .4f, .05f, 1.0f);
 }
 
 void ZepTheme::SetLightTheme()
@@ -117,6 +119,8 @@ void ZepTheme::SetLightTheme()
     m_colors[ThemeColor::WidgetActive] = m_colors[ThemeColor::TabActive];
     m_colors[ThemeColor::WidgetInactive] = m_colors[ThemeColor::TabInactive];
     m_colors[ThemeColor::WidgetBackground] = NVec4f(.8f, .8f, .8f, 1.0f);
+    
+    m_colors[ThemeColor::FlashColor] = NVec4f(.8f, .4f, .05f, 1.0f);
 }
 
 ThemeColor ZepTheme::GetUniqueColor(uint32_t index) const
@@ -124,7 +128,7 @@ ThemeColor ZepTheme::GetUniqueColor(uint32_t index) const
     return ThemeColor((uint32_t)ThemeColor::UniqueColor0 + (uint32_t)(index % (uint32_t)ThemeColor::UniqueColorLast));
 }
 
-NVec4f ZepTheme::GetColor(ThemeColor themeColor) const
+const NVec4f& ZepTheme::GetColor(ThemeColor themeColor) const
 {
     if (themeColor >= ThemeColor::UniqueColor0)
     {
@@ -135,7 +139,8 @@ NVec4f ZepTheme::GetColor(ThemeColor themeColor) const
     auto itr = m_colors.find(themeColor);
     if (itr == m_colors.end())
     {
-        return NVec4f(1.0f);
+        static const NVec4f one(1.0f);
+        return one;
     }
     return itr->second;
 }

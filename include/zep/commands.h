@@ -1,23 +1,15 @@
 #pragma once
 
-#include "mode.h"
+#include "zep/buffer.h"
 
 namespace Zep
 {
 
-namespace CommandFlags
-{
-enum
-{
-    GroupBoundary = (1 << 0),
-};
-}
-
 class ZepCommand
 {
 public:
-    ZepCommand(ZepBuffer& mode, BufferLocation cursorBefore = -1, BufferLocation cursorAfter = -1)
-        : m_buffer(mode)
+    ZepCommand(ZepBuffer& currentMode, ByteIndex cursorBefore = -1, ByteIndex cursorAfter = -1)
+        : m_buffer(currentMode)
         , m_cursorBefore(cursorBefore)
         , m_cursorAfter(cursorAfter)
     {
@@ -30,41 +22,48 @@ public:
     virtual void Redo() = 0;
     virtual void Undo() = 0;
 
-    virtual void SetFlags(uint32_t flags)
-    {
-        m_flags = flags;
-    }
-    virtual uint32_t GetFlags() const
-    {
-        return m_flags;
-    }
-    virtual BufferLocation GetCursorAfter() const
+    virtual ByteIndex GetCursorAfter() const
     {
         return m_cursorAfter;
     }
-    virtual BufferLocation GetCursorBefore() const
+    virtual ByteIndex GetCursorBefore() const
     {
         return m_cursorBefore;
     }
 
 protected:
     ZepBuffer& m_buffer;
-    uint32_t m_flags = 0;
-    BufferLocation m_cursorBefore = -1;
-    BufferLocation m_cursorAfter = -1;
+    ByteIndex m_cursorBefore = -1;
+    ByteIndex m_cursorAfter = -1;
+};
+
+class ZepCommand_GroupMarker : public ZepCommand
+{
+public:
+    ZepCommand_GroupMarker(ZepBuffer& currentMode) : ZepCommand(currentMode) {}
+    virtual void Redo() override {};
+    virtual void Undo() override {};
+};
+
+class ZepCommand_EndGroup : public ZepCommand
+{
+public:
+    ZepCommand_EndGroup(ZepBuffer& currentMode) : ZepCommand(currentMode) {}
+    virtual void Redo() override {};
+    virtual void Undo() override {};
 };
 
 class ZepCommand_DeleteRange : public ZepCommand
 {
 public:
-    ZepCommand_DeleteRange(ZepBuffer& buffer, const BufferLocation& startOffset, const BufferLocation& endOffset, const BufferLocation& cursor = BufferLocation{-1}, const BufferLocation& cursorAfter = BufferLocation{-1});
+    ZepCommand_DeleteRange(ZepBuffer& buffer, const ByteIndex& startIndex, const ByteIndex& endIndex, const ByteIndex& cursor = ByteIndex{-1}, const ByteIndex& cursorAfter = ByteIndex{-1});
     virtual ~ZepCommand_DeleteRange(){};
 
     virtual void Redo() override;
     virtual void Undo() override;
 
-    BufferLocation m_startOffset;
-    BufferLocation m_endOffset;
+    ByteIndex m_startIndex;
+    ByteIndex m_endIndex;
 
     std::string m_deleted;
 };
@@ -78,14 +77,14 @@ enum class ReplaceRangeMode
 class ZepCommand_ReplaceRange : public ZepCommand
 {
 public:
-    ZepCommand_ReplaceRange(ZepBuffer& buffer, ReplaceRangeMode replaceMode, const BufferLocation& startOffset, const BufferLocation& endOffset, const std::string& ch, const BufferLocation& cursor = BufferLocation{-1}, const BufferLocation& cursorAfter = BufferLocation{-1});
+    ZepCommand_ReplaceRange(ZepBuffer& buffer, ReplaceRangeMode replaceMode, const ByteIndex& startIndex, const ByteIndex& endIndex, const std::string& ch, const ByteIndex& cursor = ByteIndex{-1}, const ByteIndex& cursorAfter = ByteIndex{-1});
     virtual ~ZepCommand_ReplaceRange(){};
 
     virtual void Redo() override;
     virtual void Undo() override;
 
-    BufferLocation m_startOffset;
-    BufferLocation m_endOffset;
+    ByteIndex m_startIndex;
+    ByteIndex m_endIndex;
 
     std::string m_strDeleted;
     std::string m_strReplace;
@@ -95,16 +94,16 @@ public:
 class ZepCommand_Insert : public ZepCommand
 {
 public:
-    ZepCommand_Insert(ZepBuffer& buffer, const BufferLocation& startOffset, const std::string& str, const BufferLocation& cursor = BufferLocation{-1}, const BufferLocation& cursorAfter = BufferLocation{-1});
+    ZepCommand_Insert(ZepBuffer& buffer, const ByteIndex& startIndex, const std::string& str, const ByteIndex& cursor = ByteIndex{-1}, const ByteIndex& cursorAfter = ByteIndex{-1});
     virtual ~ZepCommand_Insert(){};
 
     virtual void Redo() override;
     virtual void Undo() override;
 
-    BufferLocation m_startOffset;
+    ByteIndex m_startIndex;
     std::string m_strInsert;
 
-    BufferLocation m_endOffsetInserted = -1;
+    ByteIndex m_endIndexInserted = -1;
 };
 
 } // namespace Zep

@@ -10,16 +10,11 @@ option(BUILD_TESTS "Make the tests" ON)
 option(ZEP_FEATURE_CPP_FILE_SYSTEM "Default File system enabled" ON)
 
 # Global Settings
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
-if (CMAKE_BUILD_TYPE MATCHES Coverage)
-    set(CMAKE_BUILD_TYPE "Debug")
-    set(PROJECT_COVERAGE ON)
-endif()
 
 set(CMAKE_DEBUG_POSTFIX "-debug")
 set(CMAKE_RELWITHDEBINFO_POSTFIX "-reldbg")
@@ -54,6 +49,7 @@ include(cmake/all.cmake)
 include(m3rdparty/cmake/copy_files.cmake)
 
 # The main library
+include(${ZEP_ROOT}/extensions/CMakeLists.txt)
 include(src/CMakeLists.txt)
 
 include (tests/CMakeLists.txt)

@@ -3,6 +3,9 @@
 #include "zep/mcommon/logger.h"
 #include "zep/mcommon/string/stringutils.h"
 
+#define UTF_CPP_CPLUSPLUS 201103L // C++ 11 or later
+#include "zep/mcommon/utf8/unchecked.h"
+
 // A 'window' is like a vim window; i.e. a region inside a tab
 namespace Zep
 {
@@ -15,12 +18,12 @@ void ZepDisplay::InvalidateCharCache()
 void ZepDisplay::BuildCharCache()
 {
     const char chA = 'A';
-    m_defaultCharSize = GetTextSize((const utf8*)&chA, (const utf8*)&chA + 1);
-    for (int i = 0; i < 256; i++)
+    m_defaultCharSize = GetTextSize((const uint8_t*)&chA, (const uint8_t*)&chA + 1);
+    for (int i = 0; i < 127; i++)
     {
         size_t len;
-        utf8 const *pCh = Pico8ToUtf8(i, &len);
-        m_charCache[i] = GetTextSize(pCh, pCh + len);
+        uint8_t const *pCh = Pico8ToUtf8(i, &len);
+        m_charCacheASCII[i] = GetTextSize(pCh, pCh + len);
     }
     m_charCacheDirty = false;
 }
@@ -34,13 +37,49 @@ const NVec2f& ZepDisplay::GetDefaultCharSize()
     return m_defaultCharSize;
 }
 
-NVec2f ZepDisplay::GetCharSize(const utf8* pCh)
+uint32_t ZepDisplay::GetCodePointCount(const uint8_t* pCh, const uint8_t* pEnd) const
+{
+    uint32_t count = 0;
+    while (pCh < pEnd)
+    {
+        pCh += utf8_codepoint_length(*pCh);
+        count++;
+    }
+    return count;
+}
+
+NVec2f ZepDisplay::GetCharSize(const uint8_t* pCh)
 {
     if (m_charCacheDirty)
     {
         BuildCharCache();
     }
-    return m_charCache[*pCh];
+
+    if (utf8_codepoint_length(*pCh) == 1)
+    {
+        return m_charCacheASCII[*pCh];
+    }
+ 
+    auto ch32 = utf8::unchecked::next(pCh);
+
+    auto itr = m_charCache.find((uint32_t)ch32);
+    if (itr != m_charCache.end())
+    {
+        return itr->second;
+    }
+     
+    auto sz = GetTextSize(pCh, pCh + utf8_codepoint_length(*pCh));
+    m_charCache[(uint32_t)ch32] = sz;
+
+    return sz;
+}
+    
+void ZepDisplay::DrawRect(const NRectf& rc, const NVec4f& col) const
+{
+    DrawLine(rc.topLeftPx, rc.BottomLeft(), col);
+    DrawLine(rc.topLeftPx, rc.TopRight(), col);
+    DrawLine(rc.TopRight(), rc.bottomRightPx, col);
+    DrawLine(rc.BottomLeft(), rc.bottomRightPx, col);
 }
 
 }

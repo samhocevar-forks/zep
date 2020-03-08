@@ -65,7 +65,7 @@ public:
         return m_fontHeight;
     }
 
-    NVec2f GetTextSize(const utf8* pBegin, const utf8* pEnd) const
+    NVec2f GetTextSize(const uint8_t* pBegin, const uint8_t* pEnd) const
     {
         QFontMetrics met(qApp->font());
         if (pEnd == nullptr)
@@ -73,22 +73,33 @@ public:
             pEnd = pBegin + strlen((const char*)pBegin);
         }
 
-        auto rc = met.size(Qt::TextSingleLine, QString::fromUtf8((char*)pBegin, pEnd - pBegin));
+        auto rc = met.size(Qt::TextIncludeTrailingSpaces | Qt::TextLongestVariant, QString::fromUtf8((char*)pBegin, pEnd - pBegin));
+        if (*pBegin == '\t' && (pEnd == (pBegin + 1)))
+        {
+            // Default tab width
+            rc.setWidth(rc.width() * 4);
+        }
+
+        if (rc.width() == 0.0)
+        {
+            // Make invalid characters a default fixed_size
+            const char chDefault = 'A';
+            rc = met.size(Qt::TextIncludeTrailingSpaces | Qt::TextLongestVariant, QString("A"));
+
+        }
         return NVec2f(rc.width(), rc.height());
     }
 
-    void DrawChars(const NVec2f& pos, const NVec4f& col, const utf8* text_begin, const utf8* text_end) const
+    void DrawChars(const NVec2f& pos, const NVec4f& col, const uint8_t* text_begin, const uint8_t* text_end) const
     {
         if (text_end == nullptr)
         {
             text_end = text_begin + strlen((const char*)text_begin);
         }
+
         QPoint p0 = toQPoint(pos);
         m_pPainter->setPen(QColor::fromRgbF(col.x, col.y, col.z, col.w));
-
-        p0.setY(p0.y() + m_fontOffset);
-
-        m_pPainter->drawText(p0, QString::fromUtf8((char*)text_begin, text_end - text_begin));
+        m_pPainter->drawText(p0.x(), p0.y(), m_pPainter->viewport().width() - p0.x(), m_pPainter->viewport().height() - p0.y(), Qt::TextLongestVariant, QString::fromUtf8((char*)text_begin, text_end - text_begin));
     }
 
     void DrawLine(const NVec2f& start, const NVec2f& end, const NVec4f& color, float width) const
