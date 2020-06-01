@@ -1,5 +1,4 @@
 language: cpp
-dist: bionic
 
 before_script:
   # Make mutils first and install it
@@ -20,7 +19,18 @@ before_script:
 
 matrix:
   include:
+    - os: osx
+      osx_image: xcode11.4
+      addons:
+        apt:
+          packages:
+      env:
+      script:
+        - cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
+        - make
+        - make tests
     - os: linux
+      dist: bionic
       addons:
         apt:
           packages:
@@ -37,10 +47,11 @@ matrix:
       script:
         - cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
         - make
-        - make test
+        - make tests
 
       # Coverage
     - os: linux
+      dist: bionic
       addons:
         apt:
           packages:
@@ -58,7 +69,7 @@ matrix:
         - pip install --upgrade --user git+git://github.com/eddyxu/cpp-coveralls.git
         - cmake -DENABLE_COVERAGE=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make test
+        - make tests
         - cd ..
         - |
           coveralls --build-root build --gcov-options '\-lp' \
@@ -70,6 +81,7 @@ matrix:
 
       # Google Address Sanitizer
     - os: linux
+      dist: bionic
       addons:
         apt:
           packages:
@@ -86,10 +98,11 @@ matrix:
       script:
         - cmake -DENABLE_ASAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make test
+        - make tests
 
       # Google Undefined Sanitizer
     - os: linux
+      dist: bionic
       addons:
         apt:
           packages:
@@ -106,10 +119,11 @@ matrix:
       script:
         - cmake -DENABLE_USAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make test
+        - make tests
 
       # Google Thread Sanitizer
     - os: linux
+      dist: bionic
       addons:
         apt:
           packages:
@@ -126,4 +140,4 @@ matrix:
       script:
         - cmake -DENABLE_TSAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make test
+        - make tests

@@ -230,6 +230,10 @@ public:
     {
         return m_gapBuffer;
     }
+    GapBuffer<uint8_t>& GetMutableText()
+    {
+        return m_gapBuffer;
+    }
     const std::vector<long> GetLineEnds() const
     {
         return m_lineEnds;
@@ -301,8 +305,10 @@ public:
 
     bool IsHidden() const;
 
-    uint32_t GetFileFlags() const { return m_fileFlags; }
-    void SetFileFlags(uint32_t flags) { m_fileFlags = flags; }
+    bool HasFileFlags(uint32_t flags) const;
+    void SetFileFlags(uint32_t flags, bool set = true);
+    void ClearFileFlags(uint32_t flags);
+    void ToggleFileFlag(uint32_t flags);
 
 private:
     void ClearRangeMarker(std::shared_ptr<RangeMarker> spMarker);

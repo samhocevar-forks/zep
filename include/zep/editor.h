@@ -49,6 +49,7 @@ class ZepWindow;
 class ZepTheme;
 class ZepDisplay;
 class IZepFileSystem;
+class Indexer;
 
 struct Region;
 
@@ -58,14 +59,6 @@ struct Region;
 inline bool ZTestFlags(const uint32_t& flags, uint32_t value) { return ((flags & value) ? true : false); }
 inline uint32_t ZSetFlags(const uint32_t& flags, uint32_t value, bool set = true) { if (set) { return flags | value; } else return flags; }
 inline uint32_t ZClearFlags(const uint32_t& flags, uint32_t value) { return flags & ~value; }
-inline uint32_t ZToggleFlags(const uint32_t& flags, uint32_t value)
-{
-    if (ZTestFlags(flags, value))
-    {
-        return ZClearFlags(flags, value);
-    }
-    return ZSetFlags(flags, value);
-}
 
 namespace ZepEditorFlags
 {
@@ -134,7 +127,7 @@ public:
 
 struct IZepComponent
 {
-    virtual void Notify(std::shared_ptr<ZepMessage> message) = 0;
+    virtual void Notify(std::shared_ptr<ZepMessage> message) { ZEP_UNUSED(message); };
     virtual ZepEditor& GetEditor() const = 0;
 };
 
@@ -196,9 +189,16 @@ const float tabSpacing = 1.0f;
 const float leftBorderChars = 3;
 
 #define DPI_VEC2(value) (value * GetEditor().GetPixelScale())
-#define DPI_Y(value) (GetEditor().GetPixelScale() * value)
-#define DPI_X(value) (GetEditor().GetPixelScale() * value)
+#define DPI_Y(value) (GetEditor().GetPixelScale().y * value)
+#define DPI_X(value) (GetEditor().GetPixelScale().x * value)
 #define DPI_RECT(value) (value * GetEditor().GetPixelScale())
+
+inline float FontHeightPixelsFromPointSize(float pointSize, float pixelScaleY)
+{
+    const auto fontDotsPerInch = 72.0f;
+    auto inches = pointSize / fontDotsPerInch;
+    return inches * (pixelScaleY * 96.0f);
+}
 
 enum class EditorStyle
 {
@@ -357,8 +357,8 @@ public:
     bool OnMouseUp(const NVec2f& mousePos, ZepMouseButton button);
     const NVec2f GetMousePos() const;
 
-    void SetPixelScale(float pt);
-    float GetPixelScale() const;
+    void SetPixelScale(const NVec2f& scale);
+    NVec2f GetPixelScale() const;
 
     void SetBufferSyntax(ZepBuffer& buffer) const;
     void SetBufferMode(ZepBuffer& buffer) const;
@@ -418,7 +418,7 @@ private:
     tBuffers m_buffers;
     uint32_t m_flags = 0;
 
-    mutable bool m_bPendingRefresh = true;
+    mutable std::atomic_bool m_bPendingRefresh = true;
     mutable bool m_lastCursorBlink = false;
 
     std::vector<std::string> m_commandLines; // Command information, shown under the buffer
@@ -431,14 +431,16 @@ private:
 
     float m_tabOffsetX = 0.0f;
 
-    NVec2f m_mousePos;
-    float m_pixelScale = 1.0f;
+    NVec2f m_mousePos = NVec2f(0.0f);
+    NVec2f m_pixelScale = NVec2f(1.0f);
     ZepPath m_rootPath;
 
     // Config
     EditorConfig m_config;
 
     std::unique_ptr<ThreadPool> m_threadPool;
+
+    std::shared_ptr<Indexer> m_indexer;
 };
 
 } // namespace Zep

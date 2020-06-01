@@ -41,7 +41,7 @@ build_script:
   - git clone https://github.com/cmaughan/MUtils
   - cd MUtils
   - ./prebuild.bat
-  - config.bat
+  - config_all.bat
   - build_all.bat
   - cd.. 
   - mkdir build
@@ -54,7 +54,7 @@ build_script:
 
 test_script:
     - ps: |
-        cd $env:CONFIGURATION
+        cd C:\projects\zep\build\tests\$env:CONFIGURATION
         .\unittests.exe --gtest_output=xml:unit_tests_report.xml
         $wc = New-Object 'System.Net.WebClient'
         $wc.UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path unit_tests_report.xml))
@@ -63,6 +63,7 @@ after_build:
   # set compiler var
   - if "%generator%"=="Visual Studio 16" (set COMPILER="VC16")
   # switch to project build folder and zip "tutorials" folder
-  - cd C:\projects\zep\build
-  - 7z a -tzip -mx9 "zep-%configuration%-%APPVEYOR_BUILD_VERSION%-%COMPILER%.zip" %configuration%
-  - appveyor PushArtifact "zep-%configuration%-%APPVEYOR_BUILD_VERSION%-%COMPILER%.zip"
+  - cd C:\projects\zep\build\demos
+  - 7z a -tzip -mx9 "zep-imgui-%configuration%-%APPVEYOR_BUILD_VERSION%.zip" demo_imgui\%configuration%
+  - appveyor PushArtifact "zep-imgui-%configuration%-%APPVEYOR_BUILD_VERSION%.zip"
+

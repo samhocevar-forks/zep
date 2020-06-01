@@ -175,11 +175,9 @@ void ZepMode::ClampCursorForMode()
     {
         GetCurrentWindow()->SetBufferCursor(GetCurrentWindow()->GetBuffer().ClampToVisibleLine(GetCurrentWindow()->GetBufferCursor()));
     }
-    LOG(DEBUG) << GetCurrentWindow()->GetBuffer().GetName() << " : " << GetCurrentWindow()->GetBufferCursor();
+    //LOG(DEBUG) << GetCurrentWindow()->GetBuffer().GetName() << " : " << GetCurrentWindow()->GetBufferCursor();
 }
 
-// TODO: This happens every time and doesn't guard against repeats. And some logic requires that.
-// Should really just switch if not the same.  The new command setup should make this easier to fix
 void ZepMode::SwitchMode(EditorMode currentMode)
 {
     if (m_pCurrentWindow == nullptr)
@@ -191,6 +189,7 @@ void ZepMode::SwitchMode(EditorMode currentMode)
     if (currentMode == EditorMode::None)
         return;
 
+    // Don't switch to the same thing again
     if (currentMode == m_currentMode)
         return;
 
@@ -199,7 +198,7 @@ void ZepMode::SwitchMode(EditorMode currentMode)
     auto cursor = pWindow->GetBufferCursor();
 
     // Force normal mode if the file is read only
-    if (currentMode == EditorMode::Insert && ZTestFlags(buffer.GetFileFlags(), FileFlags::ReadOnly))
+    if (currentMode == EditorMode::Insert && buffer.HasFileFlags(FileFlags::ReadOnly))
     {
         currentMode = EditorMode::Normal;
     }
@@ -500,9 +499,9 @@ void ZepMode::HandleMappedInput(const std::string& input)
     else
     {
         // If not found, and there was no request for more characters, and we aren't in Ex mode
-        if (!spContext->keymap.needMoreChars)
+        if (m_currentMode != EditorMode::Ex)
         {
-            if (m_currentMode != EditorMode::Ex)
+            if (HandleIgnoredInput(*spContext) || !spContext->keymap.needMoreChars)
             {
                 ResetCommand();
             }
@@ -518,7 +517,7 @@ void ZepMode::AddCommand(std::shared_ptr<ZepCommand> spCmd)
         return;
     }
 
-    if (ZTestFlags(GetCurrentWindow()->GetBuffer().GetFileFlags(), FileFlags::Locked))
+    if (GetCurrentWindow()->GetBuffer().HasFileFlags(FileFlags::Locked))
     {
         // Ignore commands on buffers because we are view only,
         // and all commands currently modify the buffer!
@@ -662,6 +661,13 @@ bool ZepMode::GetCommand(CommandContext& context)
     GlyphIterator cursorItr(buffer, bufferCursor);
 
     auto mappedCommand = context.keymap.foundMapping;
+   
+    // Inherited modes can handle extra commands this way
+    if (HandleSpecialCommand(context))
+    {
+        return true;
+    }
+
     if (mappedCommand == id_NormalMode)
     {
         // TODO: I think this should be a 'command' which would get replayed with dot;
@@ -789,7 +795,7 @@ bool ZepMode::GetCommand(CommandContext& context)
     }
     else if (mappedCommand == id_FontBigger)
     {
-        GetEditor().GetDisplay().SetFontPointSize(std::min(GetEditor().GetDisplay().GetFontPointSize() + 1.0f, 20.0f));
+        GetEditor().GetDisplay().SetFontPointSize(std::min(GetEditor().GetDisplay().GetFontPointSize() + 1.0f, 50.0f));
         return true;
     }
     else if (mappedCommand == id_FontSmaller)
@@ -1175,7 +1181,7 @@ bool ZepMode::GetCommand(CommandContext& context)
     else if (mappedCommand == id_InsertTab)
     {
         context.beginRange = context.bufferCursor;
-        if (ZTestFlags(buffer.GetFileFlags(), FileFlags::InsertTabs))
+        if (buffer.HasFileFlags(FileFlags::InsertTabs))
         {
             context.tempReg.text = "\t";
         }
@@ -1895,7 +1901,7 @@ bool ZepMode::HandleExCommand(std::string strCommand)
 
             auto pMapBuffer = GetEditor().GetEmptyBuffer("Mappings");
 
-            pMapBuffer->SetFileFlags(ZSetFlags(pMapBuffer->GetFileFlags(), FileFlags::Locked | FileFlags::ReadOnly));
+            pMapBuffer->SetFileFlags(FileFlags::Locked | FileFlags::ReadOnly);
             pMapBuffer->SetText(str.str());
             GetEditor().GetActiveTabWindow()->AddWindow(pMapBuffer, nullptr, RegionLayoutType::VBox);
         }
@@ -2102,7 +2108,7 @@ bool ZepMode::HandleExCommand(std::string strCommand)
         }
         else if (strCommand == ":ZTabs")
         {
-            buffer.SetFileFlags(ZToggleFlags(buffer.GetFileFlags(), FileFlags::InsertTabs));
+            buffer.ToggleFileFlag(FileFlags::InsertTabs);
         }
         else if (strCommand == ":ZShowCR")
         {
@@ -2172,7 +2178,7 @@ bool ZepMode::HandleExCommand(std::string strCommand)
                         str << " ";
                     }
 
-                    if (ZTestFlags(editor_buffer->GetFileFlags(), FileFlags::Dirty))
+                    if (editor_buffer->HasFileFlags(FileFlags::Dirty))
                     {
                         str << "+";
                     }

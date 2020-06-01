@@ -6,6 +6,7 @@ ${ZEP_ROOT}/include/zep/commands.h
 ${ZEP_ROOT}/include/zep/display.h
 ${ZEP_ROOT}/include/zep/editor.h
 ${ZEP_ROOT}/include/zep/filesystem.h
+${ZEP_ROOT}/include/zep/indexer.h
 ${ZEP_ROOT}/include/zep/keymap.h
 ${ZEP_ROOT}/include/zep/line_widgets.h
 ${ZEP_ROOT}/include/zep/mcommon/animation/timer.h
@@ -35,6 +36,7 @@ ${ZEP_ROOT}/src/commands.cpp
 ${ZEP_ROOT}/src/display.cpp
 ${ZEP_ROOT}/src/editor.cpp
 ${ZEP_ROOT}/src/filesystem.cpp
+${ZEP_ROOT}/src/indexer.cpp
 ${ZEP_ROOT}/src/keymap.cpp
 ${ZEP_ROOT}/src/line_widgets.cpp
 ${ZEP_ROOT}/src/mcommon/animation/timer.cpp
@@ -57,17 +59,7 @@ ${ZEP_ROOT}/src/theme.cpp
 ${ZEP_ROOT}/src/window.cpp
 )
 
-SET (ZEP_SRC_EXTENSIONS
-${ZEP_ROOT}/src/extensions/syntax_orca.cpp
-${ZEP_ROOT}/src/extensions/mode_orca.cpp
-${ZEP_ROOT}/src/extensions/mode_repl.cpp
-${ZEP_ROOT}/include/zep/extensions/syntax_orca.h
-${ZEP_ROOT}/include/zep/extensions/mode_orca.h
-${ZEP_ROOT}/include/zep/extensions/mode_repl.h
-)
-
-set(SOURCES ${ZEP_SOURCE}
-        ${EXTENSION_SRC})
+set(SOURCES ${ZEP_SOURCE})
 
 LIST(APPEND SRC_INCLUDE ${ZEP_ROOT}/src ${ZEP_ROOT}/src/mcommon)
 
@@ -77,11 +69,11 @@ add_library(Zep::Zep ALIAS Zep)
 
 target_include_directories(Zep 
     PRIVATE
-        src/mcommon
-        src
+        ${ZEP_ROOT}/src/mcommon
+        ${ZEP_ROOT}/src
         ${SRC_INCLUDE}
         ${CMAKE_BINARY_DIR}
-        include
+        ${ZEP_ROOT}/include
     PUBLIC
         $<INSTALL_INTERFACE:include>
     ) 
@@ -107,19 +99,10 @@ install(DIRECTORY ${ZEP_ROOT}/include/zep
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# Install the extension files
-install(DIRECTORY ${ZEP_ROOT}/extensions/orca
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zep/extensions
-)
-install(DIRECTORY ${ZEP_ROOT}/extensions/repl
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zep/extensions
-)
-
 
 # For IDE
 source_group (Zep\\common REGULAR_EXPRESSION "src/mcommon/.*")
 source_group (Zep\\common REGULAR_EXPRESSION "include/zep/mcommon/.*")
 source_group (Zep REGULAR_EXPRESSION "src/.*")
-source_group (Zep\\extensions REGULAR_EXPRESSION "extensions/.*")
 source_group (Zep\\include REGULAR_EXPRESSION "include/zep/.*")
 

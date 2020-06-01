@@ -6,6 +6,7 @@
 #include "zep/regress.h"
 #include "zep/syntax_providers.h"
 #include "zep/tab_window.h"
+#include "zep/indexer.h"
 
 #include "config_app.h"
 
@@ -86,11 +87,18 @@ ZepEditor::ZepEditor(ZepDisplay* pDisplay, const ZepPath& root, uint32_t flags, 
     m_editorRegion->children.push_back(m_tabContentRegion);
     m_editorRegion->children.push_back(m_commandRegion);
 
+#ifdef IMPLEMENTED_INDEXER
+    m_indexer = std::make_shared<Indexer>(*this);
+    m_indexer->StartIndexing();
+#endif
+
     Reset();
 }
 
 ZepEditor::~ZepEditor()
 {
+    std::for_each(m_tabWindows.begin(), m_tabWindows.end(), [](ZepTabWindow* w) { delete w; });
+    m_tabWindows.clear();
     delete m_pDisplay;
     delete m_pFileSystem;
 }
@@ -215,11 +223,11 @@ void ZepEditor::SaveBuffer(ZepBuffer& buffer)
     // - We don't check for outside modification yet either, meaning this could overwrite
     std::ostringstream strText;
 
-    if (ZTestFlags(buffer.GetFileFlags(), FileFlags::ReadOnly))
+    if (buffer.HasFileFlags(FileFlags::ReadOnly))
     {
         strText << "Failed to save, Read Only: " << buffer.GetDisplayName();
     }
-    else if (ZTestFlags(buffer.GetFileFlags(), FileFlags::Locked))
+    else if (buffer.HasFileFlags(FileFlags::Locked))
     {
         strText << "Failed to save, Locked: " << buffer.GetDisplayName();
     }
@@ -280,7 +288,7 @@ void ZepEditor::RemoveBuffer(ZepBuffer* pBuffer)
 ZepBuffer* ZepEditor::GetEmptyBuffer(const std::string& name, uint32_t fileFlags)
 {
     auto pBuffer = CreateNewBuffer(name);
-    pBuffer->SetFileFlags(ZSetFlags(pBuffer->GetFileFlags(), fileFlags));
+    pBuffer->SetFileFlags(fileFlags);
     return pBuffer;
 }
 
@@ -309,10 +317,7 @@ ZepBuffer* ZepEditor::GetFileBuffer(const ZepPath& filePath, uint32_t fileFlags,
 
     // Create buffer, try to load even if not present, the buffer represents the save path (it just isn't saved yet)
     auto pBuffer = CreateNewBuffer(filePath);
-
-    auto flags = pBuffer->GetFileFlags();
-    flags = ZSetFlags(flags, fileFlags);
-    pBuffer->SetFileFlags(flags);
+    pBuffer->SetFileFlags(fileFlags);
 
     return pBuffer;
 }
@@ -351,7 +356,9 @@ ZepWindow* ZepEditor::AddSearch()
     pSearchBuffer->SetBufferType(BufferType::Search);
 
     auto pActiveWindow = GetActiveTabWindow()->GetActiveWindow();
-    auto searchPath = GetFileSystem().GetSearchRoot(pActiveWindow->GetBuffer().GetFilePath());
+
+    bool hasGit = false;
+    auto searchPath = GetFileSystem().GetSearchRoot(pActiveWindow->GetBuffer().GetFilePath(), hasGit);
 
     auto pSearchWindow = GetActiveTabWindow()->AddWindow(pSearchBuffer, nullptr, RegionLayoutType::VBox);
     pSearchWindow->SetWindowFlags(pSearchWindow->GetWindowFlags() | WindowFlags::Modal);
@@ -445,8 +452,7 @@ void ZepEditor::UpdateWindowState()
     std::vector<ZepBuffer*> victims;
     for (auto& buffer : m_buffers)
     {
-        auto bufferFlags = buffer->GetFileFlags();
-        if (!ZTestFlags(bufferFlags, FileFlags::DefaultBuffer) || ZTestFlags(bufferFlags, FileFlags::Dirty))
+        if (!buffer->HasFileFlags(FileFlags::DefaultBuffer) || buffer->HasFileFlags(FileFlags::Dirty))
         {
             continue;
         }
@@ -550,13 +556,13 @@ void ZepEditor::UpdateTabs()
             }
 
             auto tabColor = GetTheme().GetColor(ThemeColor::TabActive);
-            if (ZTestFlags(buffer.GetFileFlags(), FileFlags::HasWarnings))
+            if (buffer.HasFileFlags(FileFlags::HasWarnings))
             {
                 tabColor = GetTheme().GetColor(ThemeColor::Warning);
             }
 
             // Errors win for coloring
-            if (ZTestFlags(buffer.GetFileFlags(), FileFlags::HasErrors))
+            if (buffer.HasFileFlags(FileFlags::HasErrors))
             {
                 tabColor = GetTheme().GetColor(ThemeColor::Error);
             }
@@ -578,7 +584,7 @@ void ZepEditor::UpdateTabs()
             spTabRegionTab->padding = DPI_VEC2(NVec2f(textBorder, textBorder));
             spTabRegionTab->flags = RegionFlags::Fixed;
             m_tabRegion->children.push_back(spTabRegionTab);
-            spTabRegionTab->pParent = m_tabRegion;
+            spTabRegionTab->pParent = m_tabRegion.get();
         }
     }
     LayoutRegion(*m_tabRegion);
@@ -645,6 +651,7 @@ const ZepEditor::tTabWindows& ZepEditor::GetTabWindows() const
 void ZepEditor::RegisterGlobalMode(std::shared_ptr<ZepMode> spMode)
 {
     m_mapGlobalModes[spMode->Name()] = spMode;
+    spMode->Init();
 }
 
 void ZepEditor::RegisterExCommand(std::shared_ptr<ZepExCommand> spCommand)
@@ -665,6 +672,7 @@ ZepExCommand* ZepEditor::FindExCommand(const std::string& strName)
 void ZepEditor::RegisterBufferMode(const std::string& extension, std::shared_ptr<ZepMode> spMode)
 {
     m_mapBufferModes[extension] = spMode;
+    spMode->Init();
 }
 
 void ZepEditor::SetGlobalMode(const std::string& currentMode)
@@ -983,7 +991,8 @@ bool ZepEditor::RefreshRequired()
     // Allow any components to update themselves
     Broadcast(std::make_shared<ZepMessage>(Msg::Tick));
 
-    if (m_bPendingRefresh || m_lastCursorBlink != GetCursorBlinkState())
+    auto lastBlink = m_lastCursorBlink;
+    if (m_bPendingRefresh || lastBlink != GetCursorBlinkState())
     {
         if (!ZTestFlags(m_flags, ZepEditorFlags::FastUpdate))
         {
@@ -1196,12 +1205,12 @@ const NVec2f ZepEditor::GetMousePos() const
     return m_mousePos;
 }
 
-void ZepEditor::SetPixelScale(float scale)
+void ZepEditor::SetPixelScale(const NVec2f& scale)
 {
     m_pixelScale = scale;
 }
 
-float ZepEditor::GetPixelScale() const
+NVec2f ZepEditor::GetPixelScale() const
 {
     return m_pixelScale;
 }
