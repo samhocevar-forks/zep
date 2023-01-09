@@ -24,7 +24,7 @@ ZepSyntax::ZepSyntax(
     , m_stop(false)
     , m_flags(flags)
 {
-    m_syntax.resize(m_buffer.GetText().size());
+    m_syntax.resize(m_buffer.GetWorkingBuffer().size());
     m_adornments.push_back(std::make_shared<ZepSyntaxAdorn_RainbowBrackets>(*this, m_buffer));
 }
 
@@ -33,20 +33,20 @@ ZepSyntax::~ZepSyntax()
     Interrupt();
 }
 
-SyntaxResult ZepSyntax::GetSyntaxAt(long offset) const
+SyntaxResult ZepSyntax::GetSyntaxAt(const GlyphIterator& offset) const
 {
     Zep::SyntaxResult result;
 
     Wait();
 
-    if (m_processedChar < offset || (long)m_syntax.size() <= offset)
+    if (m_processedChar < offset.Index() || (long)m_syntax.size() <= offset.Index())
     {
         return result;
     }
 
-    result.background = m_syntax[offset].background;
-    result.foreground = m_syntax[offset].foreground;
-    result.underline = m_syntax[offset].underline;
+    result.background = m_syntax[offset.Index()].background;
+    result.foreground = m_syntax[offset.Index()].foreground;
+    result.underline = m_syntax[offset.Index()].underline;
 
     bool found = false;
     for (auto& adorn : m_adornments)
@@ -59,65 +59,6 @@ SyntaxResult ZepSyntax::GetSyntaxAt(long offset) const
         }
     }
 
-    if (m_flashRange.x != m_flashRange.y && m_flashRange.x <= offset && m_flashRange.y >= offset)
-    {
-        auto elapsed = timer_get_elapsed_seconds(m_flashTimer);
-        if (elapsed < m_flashDuration)
-        {
-            // first get the preferred back color
-            NVec4f backColor;
-            if (result.background != ThemeColor::None)
-            {
-                backColor = GetEditor().GetTheme().GetColor(result.background);
-            }
-            else
-            {
-                backColor = GetEditor().GetTheme().GetColor(ThemeColor::Background);
-            }
-
-            // Swap it out for our custom flash color
-            float time = float(elapsed) / m_flashDuration;
-
-            result.background = ThemeColor::Custom;
-            result.customBackgroundColor = NVec4f(GetEditor().GetTheme().GetColor(ThemeColor::FlashColor));
-
-            if (m_flashType == SyntaxFlashType::Flash)
-            {
-                result.customBackgroundColor = Mix(backColor, result.customBackgroundColor, sin(time * ZPI));
-            }
-            else
-            {
-                float t = std::abs(sin(time * ZPI * .5f)) * 2.0f + .5f;
-                if (t > 1.0f)
-                {
-                    t = 1.0f - (t - 1.0f);
-                }
-
-                // https://codegolf.stackexchange.com/a/22629
-                // Light up the characters with a bright spot in the center, and a
-                // ten character fall off; walk through the text and return
-                auto bellCurve = [](float x) {
-                    float b = 0.0f;
-                    float c = 6.0f;
-                    return std::exp((-((x - b) * (x - b)) / 2) * (c * c));
-                };
-
-                auto range = m_flashRange.y - m_flashRange.x;
-                auto center = range * t;
-
-                // Sample a bell curve about the current point, but don't draw the head
-                auto distance = bellCurve(((offset - center) / range));
-
-                distance = std::min(1.0f, distance);
-                distance = std::max(0.0f, distance);
-                result.customBackgroundColor = Mix(backColor, result.customBackgroundColor, float(distance));
-            }
-        }
-        else
-        {
-            EndFlash();
-        }
-    }
     return result;
 }
 
@@ -140,29 +81,30 @@ void ZepSyntax::Interrupt()
     m_stop = false;
 }
 
-void ZepSyntax::QueueUpdateSyntax(ByteIndex startLocation, ByteIndex endLocation)
+void ZepSyntax::QueueUpdateSyntax(GlyphIterator startLocation, GlyphIterator endLocation)
 {
-    assert(startLocation >= 0);
+    assert(startLocation.Valid());
     assert(endLocation >= startLocation);
     // Record the max location the syntax is valid up to.  This will
     // ensure that multiple calls to restart the thread keep track of where to start
     // This means a small edit at the end of a big file, followed by a small edit at the top
     // is the worst case scenario, because
-    m_processedChar = std::min(startLocation, long(m_processedChar));
-    m_targetChar = std::max(endLocation, long(m_targetChar));
+    m_processedChar = std::min(startLocation.Index(), long(m_processedChar));
+    m_targetChar = std::max(endLocation.Index(), long(m_targetChar));
 
     // Make sure the syntax buffer is big enough - adding normal syntax to the end
     // This may also 'chop'
-    m_syntax.resize(m_buffer.GetText().size(), SyntaxData{});
+    // TODO: Unicode? I _think_ this may be OK, but need to revisit
+    m_syntax.resize(m_buffer.GetWorkingBuffer().size(), SyntaxData{});
 
-    m_processedChar = std::min(long(m_processedChar), long(m_buffer.GetText().size() - 1));
-    m_targetChar = std::min(long(m_targetChar), long(m_buffer.GetText().size() - 1));
+    m_processedChar = std::min(long(m_processedChar), long(m_buffer.GetWorkingBuffer().size() - 1));
+    m_targetChar = std::min(long(m_targetChar), long(m_buffer.GetWorkingBuffer().size() - 1));
 
     // Have the thread update the syntax in the new region
     // If the pool has no threads, this will end up serial
-    m_syntaxResult = GetEditor().GetThreadPool().enqueue([=]() {
+    //m_syntaxResult = GetEditor().GetThreadPool().enqueue([=]() {
         UpdateSyntax();
-    });
+    //});
 }
 
 void ZepSyntax::Notify(std::shared_ptr<ZepMessage> spMsg)
@@ -182,13 +124,13 @@ void ZepSyntax::Notify(std::shared_ptr<ZepMessage> spMsg)
         else if (spBufferMsg->type == BufferMessageType::TextDeleted)
         {
             Interrupt();
-            m_syntax.erase(m_syntax.begin() + spBufferMsg->startLocation, m_syntax.begin() + spBufferMsg->endLocation);
+            m_syntax.erase(m_syntax.begin() + spBufferMsg->startLocation.Index(), m_syntax.begin() + spBufferMsg->endLocation.Index());
             QueueUpdateSyntax(spBufferMsg->startLocation, spBufferMsg->endLocation);
         }
         else if (spBufferMsg->type == BufferMessageType::TextAdded || spBufferMsg->type == BufferMessageType::Loaded)
         {
             Interrupt();
-            m_syntax.insert(m_syntax.begin() + spBufferMsg->startLocation, spBufferMsg->endLocation - spBufferMsg->startLocation, SyntaxData{});
+            m_syntax.insert(m_syntax.begin() + spBufferMsg->startLocation.Index(), ByteDistance(spBufferMsg->startLocation, spBufferMsg->endLocation), SyntaxData{});
             QueueUpdateSyntax(spBufferMsg->startLocation, spBufferMsg->endLocation);
         }
         else if (spBufferMsg->type == BufferMessageType::TextChanged)
@@ -202,15 +144,24 @@ void ZepSyntax::Notify(std::shared_ptr<ZepMessage> spMsg)
 // TODO: Multiline comments
 void ZepSyntax::UpdateSyntax()
 {
-    auto& buffer = m_buffer.GetText();
+    auto& buffer = m_buffer.GetWorkingBuffer();
     auto itrCurrent = buffer.begin() + m_processedChar;
     auto itrEnd = buffer.begin() + m_targetChar;
 
     assert(std::distance(itrCurrent, itrEnd) < int(m_syntax.size()));
     assert(m_syntax.size() == buffer.size());
 
-    std::string delim(" \t.\n;(){}=:");
+    std::string delim;
     std::string lineEnd("\n");
+
+    if (m_flags & ZepSyntaxFlags::LispLike)
+    { 
+        delim = std::string(" \t.\n(){}[]");
+    }
+    else
+    {
+        delim = std::string(" \t.\n;(){}[]=:,!");
+    }
 
     // Walk backwards to previous delimiter
     while (itrCurrent > buffer.begin())
@@ -244,8 +195,6 @@ void ZepSyntax::UpdateSyntax()
 
     // Update start location
     m_processedChar = long(itrCurrent - buffer.begin());
-
-    //LOG(DEBUG) << "Updating Syntax: Start=" << m_processedChar << ", End=" << std::distance(buffer.begin(), itrEnd);
 
     // Walk the buffer updating information about syntax coloring
     while (itrCurrent != itrEnd)
@@ -301,6 +250,10 @@ void ZepSyntax::UpdateSyntax()
         {
             mark(itrFirst, itrLast, ThemeColor::Parenthesis, ThemeColor::None);
         }
+        else if ((m_flags & ZepSyntaxFlags::LispLike) && token[0] == ':')
+        {
+            mark(itrFirst, itrLast, ThemeColor::Identifier, ThemeColor::None);
+        }
         else
         {
             mark(itrFirst, itrLast, ThemeColor::Normal, ThemeColor::None);
@@ -341,17 +294,31 @@ void ZepSyntax::UpdateSyntax()
         findString('\"');
         findString('\'');
 
-        std::string commentStr = "-";
-        auto itrComment = buffer.find_first_of(itrFirst, itrLast, commentStr.begin(), commentStr.end());
-        if (itrComment != buffer.end())
+        if (m_flags & ZepSyntaxFlags::LispLike)
         {
-            auto itrCommentStart = itrComment++;
-            if (itrComment < buffer.end())
+            // Lisp languages use ; or # for comments
+            std::string commentStr = ";#";
+            auto itrComment = buffer.find_first_of(itrFirst, itrLast, commentStr.begin(), commentStr.end());
+            if (itrComment != buffer.end())
             {
-                if (*itrComment == '-')
+                itrLast = buffer.find_first_of(itrComment, buffer.end(), lineEnd.begin(), lineEnd.end());
+                mark(itrComment, itrLast, ThemeColor::Comment, ThemeColor::None);
+            }
+        }
+        else
+        {
+            std::string commentStr = "-";
+            auto itrComment = buffer.find_first_of(itrFirst, itrLast, commentStr.begin(), commentStr.end());
+            if (itrComment != buffer.end())
+            {
+                auto itrCommentStart = itrComment++;
+                if (itrComment < buffer.end())
                 {
-                    itrLast = buffer.find_first_of(itrCommentStart, buffer.end(), lineEnd.begin(), lineEnd.end());
-                    mark(itrCommentStart, itrLast, ThemeColor::Comment, ThemeColor::None);
+                    if (*itrComment == '-')
+                    {
+                        itrLast = buffer.find_first_of(itrCommentStart, buffer.end(), lineEnd.begin(), lineEnd.end());
+                        mark(itrCommentStart, itrLast, ThemeColor::Comment, ThemeColor::None);
+                    }
                 }
             }
         }
@@ -363,27 +330,6 @@ void ZepSyntax::UpdateSyntax()
     // Reset the target to the beginning
     m_targetChar = long(0);
     m_processedChar = long(buffer.size() - 1);
-}
-
-void ZepSyntax::EndFlash() const
-{
-    m_flashRange = NVec2<ByteIndex>(0, 0);
-
-    GetEditor().SetFlags(ZClearFlags(GetEditor().GetFlags(), ZepEditorFlags::FastUpdate));
-}
-
-void ZepSyntax::BeginFlash(float seconds, SyntaxFlashType flashType, const NVec2i& range)
-{
-    m_flashRange = range;
-    m_flashDuration = seconds;
-    m_flashType = flashType;
-    timer_restart(m_flashTimer);
-
-    if (range == NVec2i(0))
-    {
-        m_flashRange = NVec2i(long(0), long(m_syntax.size() - 1));
-    }
-    GetEditor().SetFlags(ZSetFlags(GetEditor().GetFlags(), ZepEditorFlags::FastUpdate));
 }
 
 const NVec4f& ZepSyntax::ToBackgroundColor(const SyntaxResult& res) const

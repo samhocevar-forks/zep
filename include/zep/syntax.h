@@ -28,7 +28,9 @@ namespace ZepSyntaxFlags
 {
 enum
 {
-    CaseInsensitive = (1 << 0)
+    CaseInsensitive = (1 << 0),
+    IgnoreLineHighlight = (1 << 1),
+    LispLike = (1 << 2)
 };
 };
 
@@ -45,12 +47,6 @@ struct SyntaxResult : SyntaxData
     NVec4f customForegroundColor;
 };
 
-enum class SyntaxFlashType
-{
-    Flash,
-    Cylon
-};
-
 class ZepSyntaxAdorn;
 class ZepSyntax : public ZepComponent
 {
@@ -61,7 +57,7 @@ public:
         uint32_t flags = 0);
     virtual ~ZepSyntax();
 
-    virtual SyntaxResult GetSyntaxAt(long index) const;
+    virtual SyntaxResult GetSyntaxAt(const GlyphIterator& index) const;
     virtual void UpdateSyntax();
     virtual void Interrupt();
     virtual void Wait() const;
@@ -72,15 +68,13 @@ public:
     }
     virtual void Notify(std::shared_ptr<ZepMessage> payload) override;
 
-    virtual void BeginFlash(float seconds, SyntaxFlashType type = SyntaxFlashType::Cylon, const NVec2i& range = NVec2i(0));
-    virtual void EndFlash() const;
-
     const NVec4f& ToBackgroundColor(const SyntaxResult& res) const;
     const NVec4f& ToForegroundColor(const SyntaxResult& res) const;
 
-    virtual void SetCurrentCursor(ByteIndex index) { m_currentCursor = index; };
+    virtual void IgnoreLineHighlight() { m_flags |= ZepSyntaxFlags::IgnoreLineHighlight; }
+
 private:
-    virtual void QueueUpdateSyntax(ByteIndex startLocation, ByteIndex endLocation);
+    virtual void QueueUpdateSyntax(GlyphIterator startLocation, GlyphIterator endLocation);
 
 protected:
     ZepBuffer& m_buffer;
@@ -97,11 +91,7 @@ protected:
     std::vector<std::shared_ptr<ZepSyntaxAdorn>> m_adornments;
     uint32_t m_flags;
 
-    mutable NVec2<ByteIndex> m_flashRange;
-    float m_flashDuration = 1.0f;
-    timer m_flashTimer;
-    SyntaxFlashType m_flashType = SyntaxFlashType::Cylon;
-    ByteIndex m_currentCursor = 0;
+    ByteRange m_activeLineRange = { 0, 0 };
 };
 
 class ZepSyntaxAdorn : public ZepComponent
@@ -114,13 +104,11 @@ public:
     {
     }
 
-    virtual SyntaxResult GetSyntaxAt(long offset, bool& found) const = 0;
-    virtual void SetCurrentCursor(ByteIndex index) { m_currentCursor = index; };
+    virtual SyntaxResult GetSyntaxAt(const GlyphIterator& offset, bool& found) const = 0;
 
 protected:
     ZepBuffer& m_buffer;
     ZepSyntax& m_syntax;
-    ByteIndex m_currentCursor = 0;
 };
 
 } // namespace Zep

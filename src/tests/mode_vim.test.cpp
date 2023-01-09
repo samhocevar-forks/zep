@@ -3,10 +3,10 @@
 #include "zep/buffer.h"
 #include "zep/display.h"
 #include "zep/editor.h"
+#include "zep/mcommon/logger.h"
 #include "zep/mode_vim.h"
 #include "zep/tab_window.h"
 #include "zep/window.h"
-#include "zep/mcommon/logger.h"
 
 #include <gtest/gtest.h>
 #include <regex>
@@ -37,7 +37,7 @@ public:
         // Setup editor with a default fixed_size so that text doesn't wrap and confuse the tests!
         spEditor->SetDisplayRegion(NVec2f(0.0f, 0.0f), NVec2f(1024.0f, 1024.0f));
 
-        pWindow->SetBufferCursor(0);
+        pWindow->SetBufferCursor(pBuffer->Begin());
 
         //Quicker testing
         //COMMAND_TEST(delete_cw, "one two three", "cwabc", "abc two three");
@@ -45,7 +45,7 @@ public:
         /*pBuffer->SetText("one\n\nthree");
         spEditor->Display(*spDisplay);
         spMode->AddCommandText("jciwtwo");               
-        assert(pBuffer->GetText().string() == "abc two three");
+        assert(pBuffer->GetWorkingBuffer().string() == "abc two three");
         */
     }
 
@@ -61,6 +61,57 @@ public:
     std::shared_ptr<ZepMode_Vim> spMode;
 };
 
+#define HANDLE_VIM_COMMAND(command)               \
+    for (auto& ch : command)                      \
+    {                                             \
+        if (ch == 0)                              \
+            continue;                             \
+        if (ch == '\n')                           \
+        {                                         \
+            spMode->AddKeyPress(ExtKeys::RETURN); \
+        }                                         \
+        else                                      \
+        {                                         \
+            spMode->AddKeyPress(ch);              \
+        }                                         \
+    }
+
+#define CURSOR_TEST(name, source, command, xcoord, ycoord) \
+    TEST_F(VimTest, name)                                  \
+    {                                                      \
+        pBuffer->SetText(source);                          \
+        HANDLE_VIM_COMMAND(command);                       \
+        ASSERT_EQ(pWindow->BufferToDisplay().x, xcoord);   \
+        ASSERT_EQ(pWindow->BufferToDisplay().y, ycoord);   \
+    };
+
+#define VISUAL_TEST(name, source, command, start, end) \
+    TEST_F(VimTest, name)                                  \
+    {                                                      \
+        pBuffer->SetText(source);                          \
+        HANDLE_VIM_COMMAND(command);                       \
+        ASSERT_EQ(spMode->GetInclusiveVisualRange().first.Index(), start); \
+        ASSERT_EQ(spMode->GetInclusiveVisualRange().second.Index(), end);  \
+    };
+
+// Given a sample text, a keystroke list and a target text, check the test returns the right thing
+#define COMMAND_TEST(name, source, command, target)                     \
+    TEST_F(VimTest, name)                                               \
+    {                                                                   \
+        pBuffer->SetText(source);                                       \
+        spMode->AddCommandText(command);                                \
+        ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), target); \
+    };
+
+#define COMMAND_TEST_RET(name, source, command, target)                 \
+    TEST_F(VimTest, name)                                               \
+    {                                                                   \
+        pBuffer->SetText(source);                                       \
+        spMode->AddCommandText(command);                                \
+        spMode->AddKeyPress(ExtKeys::RETURN);                           \
+        ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), target); \
+    };
+
 TEST_F(VimTest, CheckDisplaySucceeds)
 {
     pBuffer->SetText("Some text to display\nThis is a test.");
@@ -75,24 +126,6 @@ TEST_F(VimTest, CheckDisplayWrap)
     ASSERT_NO_FATAL_FAILURE(spEditor->Display());
     ASSERT_FALSE(pTabWindow->GetWindows().empty());
 }
-// Given a sample text, a keystroke list and a target text, check the test returns the right thing
-#define COMMAND_TEST(name, source, command, target)                \
-    TEST_F(VimTest, name)                                          \
-    {                                                              \
-        pBuffer->SetText(source);                                  \
-        spMode->AddCommandText(command);                           \
-        ASSERT_STREQ(pBuffer->GetText().string().c_str(), target); \
-    };
-
-#define COMMAND_TEST_RET(name, source, command, target)            \
-    TEST_F(VimTest, name)                                          \
-    {                                                              \
-        pBuffer->SetText(source);                                  \
-        spMode->AddCommandText(command);                           \
-        spMode->AddKeyPress(ExtKeys::RETURN);                      \
-        ASSERT_STREQ(pBuffer->GetText().string().c_str(), target); \
-    };
-
 TEST_F(VimTest, UndoRedo)
 {
     // The issue here is that setting the text _should_ update the buffer!
@@ -101,12 +134,12 @@ TEST_F(VimTest, UndoRedo)
     spMode->Undo();
     spMode->Redo();
     spMode->Undo();
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Hello");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Hello");
 
     spMode->AddCommandText("iYo, jk");
     spMode->Undo();
     spMode->Redo();
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Yo, Hello");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Yo, Hello");
 }
 
 TEST_F(VimTest, DELETE)
@@ -114,11 +147,11 @@ TEST_F(VimTest, DELETE)
     pBuffer->SetText("Hello");
     spMode->AddKeyPress(ExtKeys::DEL);
     spMode->AddKeyPress(ExtKeys::DEL);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "llo");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "llo");
 
     spMode->AddCommandText("vll");
     spMode->AddKeyPress(ExtKeys::DEL);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "");
 
     pBuffer->SetText("H");
     spMode->AddKeyPress(ExtKeys::DEL);
@@ -131,7 +164,7 @@ TEST_F(VimTest, ESCAPE)
     spMode->AddCommandText("iHi, ");
     spMode->AddKeyPress(ExtKeys::ESCAPE);
     spMode->Undo();
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Hello");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Hello");
 }
 
 TEST_F(VimTest, RETURN)
@@ -142,7 +175,7 @@ TEST_F(VimTest, RETURN)
 
     spMode->AddCommandText("li");
     spMode->AddKeyPress(ExtKeys::RETURN);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Õne\nt\nwo");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Õne\nt\nwo");
 }
 
 TEST_F(VimTest, TAB)
@@ -150,7 +183,7 @@ TEST_F(VimTest, TAB)
     pBuffer->SetText("HellÕ");
     spMode->AddCommandText("llllllllli");
     spMode->AddKeyPress(ExtKeys::TAB);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Hell    Õ");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Hell    Õ");
 }
 
 TEST_F(VimTest, BACKSPACE)
@@ -159,12 +192,12 @@ TEST_F(VimTest, BACKSPACE)
     spMode->AddCommandText("ll");
     spMode->AddKeyPress(ExtKeys::BACKSPACE);
     spMode->AddKeyPress(ExtKeys::BACKSPACE);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Hello");
-    ASSERT_EQ(pWindow->GetBufferCursor(), 0);
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Hello");
+    ASSERT_EQ(pWindow->GetBufferCursor().Index(), 0);
 
     spMode->AddCommandText("lli");
     spMode->AddKeyPress(ExtKeys::BACKSPACE);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "Hllo");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "Hllo");
 
     // Check that appending on the line then hitting backspace removes the last char
     // A bug that showed up at some point
@@ -172,7 +205,7 @@ TEST_F(VimTest, BACKSPACE)
     spMode->AddKeyPress(ExtKeys::ESCAPE);
     spMode->AddCommandText("AC");
     spMode->AddKeyPress(ExtKeys::BACKSPACE);
-    ASSERT_STREQ(pBuffer->GetText().string().c_str(), "AB");
+    ASSERT_STREQ(pBuffer->GetWorkingBuffer().string().c_str(), "AB");
 }
 
 // The various rules of vim keystrokes are hard to consolidate.
@@ -246,15 +279,17 @@ COMMAND_TEST(delete_ciw_space_start, " one two three", "ciwabc", "abcone two thr
 
 // ciW
 COMMAND_TEST(delete_ciW_first, "one! two three", "ciWabc", "abc two three");
-COMMAND_TEST(delete_ciw_nonascii, "one\200 two three", "ciwabc", "abc\200 two three");
-COMMAND_TEST(delete_ciW_nonascii, "one\200 two three", "ciWabc", "abc\200 two three");
+COMMAND_TEST(delete_ciw_nonascii, "one£ two three", "ciwabc", "abc£ two three");
+COMMAND_TEST(delete_ciW_nonascii, "one£ two three", "ciWabc", "abc£ two three");
 
 // cw
 COMMAND_TEST(delete_cw, "one two three", "cwabc", "abc two three");
 COMMAND_TEST(delete_cw_inside, "one two three", "lcwabc", "oabc two three");
 COMMAND_TEST(delete_cw_inside_2, "one two three", "llllllllcwabc", "one two abc");
 
-// TODO:
+// TODO: Inner count doesn't work, counts on changing words doesn't work.
+// I think this is because the first command runs and the second one tries to modify the following space instead of the next word.
+// Need to debug..
 //COMMAND_TEST(delete_c2w, "one two three", "c2w", " three");
 
 // cW
@@ -298,6 +333,7 @@ COMMAND_TEST(dot_command, "one two three four", "daw..", "four");
 
 // Join - leaves a space, skips white space
 COMMAND_TEST(join_lines, "one\ntwo", "J", "one two");
+COMMAND_TEST(join_lines_on_empty, "one\n\ntwo", "jJ", "one\ntwo");
 
 COMMAND_TEST(join_lines_skip_ws, "one\n   two", "J", "one two");
 
@@ -352,6 +388,7 @@ COMMAND_TEST(change_to_digit, "one 1wo", "ct1hey", "hey1wo");
 
 COMMAND_TEST(delete_to_char, "one 1wo", "dt1", "1wo");
 COMMAND_TEST(delete_to_digit, "one two", "dtt", "two");
+COMMAND_TEST(delete_final_line, "one\n", "jdd", "one");
 
 COMMAND_TEST(visual_inner_word, "one-three", "lviwd", "-three");
 COMMAND_TEST(visual_inner_word_undo, "one-three", "lviwdu", "one-three");
@@ -361,28 +398,9 @@ COMMAND_TEST(visual_a_word, "one three", "vawd", "three");
 COMMAND_TEST(visual_a_word_undo, "one three", "vawdu", "one three");
 COMMAND_TEST(visual_a_WORD, "one-three four", "vaWd", "four");
 COMMAND_TEST(visual_a_WORD_undo, "one-three four", "vaWdu", "one-three four");
+COMMAND_TEST(visual_copy_paste_over, "hello goodbye", "vllllyllllllvlllllllp", "hello hello");
 
-
-#define CURSOR_TEST(name, source, command, xcoord, ycoord) \
-    TEST_F(VimTest, name)                                  \
-    {                                                      \
-        pBuffer->SetText(source);                          \
-        for (auto& ch : command)                           \
-        {                                                  \
-            if (ch == 0)                                   \
-                continue;                                  \
-            if (ch == '\n')                                \
-            {                                              \
-                spMode->AddKeyPress(ExtKeys::RETURN);      \
-            }                                              \
-            else                                           \
-            {                                              \
-                spMode->AddKeyPress(ch);                   \
-            }                                              \
-        }                                                  \
-        ASSERT_EQ(pWindow->BufferToDisplay().x, xcoord);   \
-        ASSERT_EQ(pWindow->BufferToDisplay().y, ycoord);   \
-    };
+VISUAL_TEST(visual_select_from_end, "one\n", "jvk", 0, 4);
 
 // Motions
 CURSOR_TEST(motion_lright, "one", "ll", 2, 0);
@@ -410,8 +428,21 @@ CURSOR_TEST(motion_w_space, "one two three", "lllw", 4, 0);
 CURSOR_TEST(motion_W, "one! two three", "W", 5, 0);
 CURSOR_TEST(motion_W_over_line, "one;\ntwo", "W", 0, 1);
 
-CURSOR_TEST(motion_w_over_nonascii, "abc\200 def", "w", 3, 0);
-CURSOR_TEST(motion_W_over_nonascii, "abc\200 def", "W", 3, 0);
+CURSOR_TEST(motion_w_over_nonascii, "abc£ def", "w", 3, 0);
+CURSOR_TEST(motion_W_over_nonascii, "abc£ def", "W", 3, 0);
+
+CURSOR_TEST(motion_percent_next_bracket, "a ( b \na ) b", "%", 2, 1);
+CURSOR_TEST(motion_percent_next_then_first_bracket, "a ( b \na ) b", "%%", 2, 0);
+CURSOR_TEST(motion_percent_first_bracket_inner, "a ( b \na ) b", "ll%%", 2, 0);
+CURSOR_TEST(motion_percent_inner_bracket_step, "a ( b () \na ) b", "ll%", 2, 1);
+CURSOR_TEST(motion_percent_previous_line, "a(x,\n y) z\nf()", "j%", 1, 0); // jump back to previous line
+CURSOR_TEST(motion_percent_no_jump, "a(x,\n y) z\nf()", "j3l%", 3, 1); // no jump
+CURSOR_TEST(motion_percent_next_line, "a(x,\n y) z[\nf()]", "j3l%", 3, 2); // jump to next line closing `]`
+CURSOR_TEST(motion_percent_multiple, "vec2(cos(x), sin(y))", "9l%", 8, 0); // fail: jumps to 18
+CURSOR_TEST(motion_percent_multiple_a, "vec2(cos(x), sin(y))", "10l%", 8, 0); // should be same as previous (starting on paren) - fail: jumps to 18
+CURSOR_TEST(motion_percent_multiple_b, "vec2(cos(x), sin(y))", "9l%%", 10, 0); // fail: jumps to 16
+CURSOR_TEST(motion_percent_multiple_c, "vec2(cos(x), sin(y))", "17l%", 16, 0); // fail: jumps back to 8
+CURSOR_TEST(motion_percent_multiple_d, "vec2(cos(x), sin(y))", "17l%%", 18, 0); // fail: jumps to 10
 
 CURSOR_TEST(motion_b, "one! two three", "wwb", 3, 0);
 CURSOR_TEST(motion_b_from_non_word, "one! two three", "wwbb", 0, 0);
@@ -441,7 +472,6 @@ CURSOR_TEST(find_a_char_num, "one2 one2", "2f2", 8, 0);
 CURSOR_TEST(find_a_char_beside, "ooo", "fo;", 2, 0);
 CURSOR_TEST(find_backwards, "foo", "lllllFf", 0, 0);
 
-
 inline std::string MakeCommandRegex(const std::string& command)
 {
     return std::string(R"((?:(\d)|(<\S>*)|("\w?)*)()") + command + ")";
@@ -458,7 +488,8 @@ TEST(Regex, VimRegex)
     {
         for (auto& m : match)
         {
-            LOG(DEBUG) << "Match: " << m.str();
+            ZEP_UNUSED(m);
+            ZLOG(DBG, "Match: " << m.str());
         }
     }
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QFont>
 #include <QIcon>
 #include <QPainter>
@@ -46,12 +45,6 @@ inline QSize ScalePixels(const QSize& size)
 inline QSize ScalePixels(int w, int h)
 {
     return ScalePixels(QSize(w, h));
-}
-
-inline float GetFontPointSize()
-{
-    const QFont font = qApp->font();
-    return font.pointSizeF();
 }
 
 } // namespace DPI

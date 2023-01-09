@@ -52,6 +52,10 @@ Indexer::Indexer(ZepEditor& editor)
 void Indexer::GetSearchPaths(ZepEditor& editor, const ZepPath& path, std::vector<std::string>& ignore_patterns, std::vector<std::string>& include_patterns, std::string& errors)
 {
     ZepPath config = path / ".zep" / "project.cfg";
+    if (!editor.GetFileSystem().Exists(config))
+    {
+        config = editor.GetConfigRoot() / "zep.cfg";
+    }
 
     if (editor.GetFileSystem().Exists(config))
     {
@@ -248,7 +252,7 @@ void Indexer::StartSymbolSearch()
             auto fullPath = m_searchRoot / path;
             if (fs.Exists(fullPath))
             {
-                LOG(DEBUG) << "Parsing: " << fullPath.c_str();
+                ZLOG(DBG, "Parsing: " << fullPath.c_str());
                 auto strFile = GetEditor().GetFileSystem().Read(fullPath);
 
                 std::vector<std::string> tokens;
@@ -264,7 +268,7 @@ bool Indexer::StartIndexing()
     m_searchRoot = GetEditor().GetFileSystem().GetSearchRoot(GetEditor().GetFileSystem().GetWorkingDirectory(), foundGit);
     if (!foundGit)
     {
-        LOG(INFO) << "Not a git project";
+        ZLOG(INFO, "Not a git project");
         return false;
     }
 
@@ -275,7 +279,7 @@ bool Indexer::StartIndexing()
     {
         if (!fs.MakeDirectories(indexDBRoot))
         {
-            LOG(ERROR) << "Can't get the index folder";
+            ZLOG(ERROR, "Can't get the index folder");
             return false;
         }
     }

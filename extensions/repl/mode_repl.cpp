@@ -1,7 +1,8 @@
+#include "zep/editor.h"
 #include "zep/filesystem.h"
+#include "zep/syntax.h"
 #include "zep/tab_window.h"
 #include "zep/window.h"
-#include "zep/editor.h"
 
 #include "zep/mcommon/logger.h"
 #include "zep/mcommon/threadutils.h"
@@ -10,12 +11,89 @@
 namespace Zep
 {
 
+ZepReplEvaluateOuterCommand::ZepReplEvaluateOuterCommand(ZepEditor& editor, IZepReplProvider* pProvider)
+    : ZepExCommand(editor)
+    , m_pProvider(pProvider)
+{
+    keymap_add(m_keymap, { "<C-Return>" }, ExCommandId());
+}
+
+void ZepReplEvaluateOuterCommand::Register(ZepEditor& editor, IZepReplProvider* pProvider)
+{
+    editor.RegisterExCommand(std::make_shared<ZepReplEvaluateOuterCommand>(editor, pProvider));
+}
+
+void ZepReplEvaluateOuterCommand::Run(const std::vector<std::string>& tokens)
+{
+    ZEP_UNUSED(tokens);
+    if (!GetEditor().GetActiveTabWindow())
+    {
+        return;
+    }
+
+    auto& buffer = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
+    auto cursor = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBufferCursor();
+
+    m_pProvider->ReplParse(buffer, cursor, ReplParseType::OuterExpression);
+}
+
+ZepReplEvaluateCommand::ZepReplEvaluateCommand(ZepEditor& editor, IZepReplProvider* pProvider)
+    : ZepExCommand(editor)
+    , m_pProvider(pProvider)
+{
+    keymap_add(m_keymap, { "<S-Return>" }, ExCommandId());
+}
+
+void ZepReplEvaluateCommand::Register(ZepEditor& editor, IZepReplProvider* pProvider)
+{
+    editor.RegisterExCommand(std::make_shared<ZepReplEvaluateCommand>(editor, pProvider));
+}
+
+void ZepReplEvaluateCommand::Run(const std::vector<std::string>& tokens)
+{
+    ZEP_UNUSED(tokens);
+    if (!GetEditor().GetActiveTabWindow())
+    {
+        return;
+    }
+
+    auto& buffer = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
+    auto cursor = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBufferCursor();
+
+    m_pProvider->ReplParse(buffer, cursor, ReplParseType::All);
+}
+
+ZepReplEvaluateInnerCommand::ZepReplEvaluateInnerCommand(ZepEditor& editor, IZepReplProvider* pProvider)
+    : ZepExCommand(editor)
+    , m_pProvider(pProvider)
+{
+    keymap_add(m_keymap, { "<C-S-Return>" }, ExCommandId());
+}
+
+void ZepReplEvaluateInnerCommand::Register(ZepEditor& editor, IZepReplProvider* pProvider)
+{
+    editor.RegisterExCommand(std::make_shared<ZepReplEvaluateInnerCommand>(editor, pProvider));
+}
+
+void ZepReplEvaluateInnerCommand::Run(const std::vector<std::string>& tokens)
+{
+    ZEP_UNUSED(tokens);
+    if (!GetEditor().GetActiveTabWindow())
+    {
+        return;
+    }
+
+    auto& buffer = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
+    auto cursor = GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBufferCursor();
+
+    m_pProvider->ReplParse(buffer, cursor, ReplParseType::SubExpression);
+}
 const std::string PromptString = ">> ";
 const std::string ContinuationString = ".. ";
 
 ZepReplExCommand::ZepReplExCommand(ZepEditor& editor, IZepReplProvider* pProvider)
-    : ZepExCommand(editor),
-    m_pProvider(pProvider)
+    : ZepExCommand(editor)
+    , m_pProvider(pProvider)
 {
     keymap_add(m_keymap, { "<c-e>" }, ExCommandId());
 }
@@ -32,95 +110,52 @@ void ZepReplExCommand::Run(const std::vector<std::string>& tokens)
     {
         return;
     }
-    
-    auto pReplBuffer = GetEditor().GetEmptyBuffer("Repl.lisp", FileFlags::Locked);
-    pReplBuffer->SetBufferType(BufferType::Repl);
-   
-    // Note: Need to set the mode _before_ adding the window
-    auto pMode = std::make_shared<ZepMode_Repl>(GetEditor(), m_pProvider);
-    pReplBuffer->SetMode(pMode);
+
+    // TODO: Modifiable but not saveable buffer
+    m_pReplBuffer = GetEditor().GetEmptyBuffer("Repl.lisp"); // , FileFlags::ReadOnly);
+    m_pReplBuffer->SetBufferType(BufferType::Repl);
+    m_pReplBuffer->GetSyntax()->IgnoreLineHighlight();
+    m_pReplBuffer->SetPostKeyNotifier([&](uint32_t key, uint32_t modifier)
+    {
+        return AddKeyPress(key, modifier);
+    });
 
     // Adding the window will make it active and begin the mode
-    GetEditor().GetActiveTabWindow()->AddWindow(pReplBuffer, nullptr, RegionLayoutType::VBox);
-    pMode->Prompt();
+    m_pReplWindow = GetEditor().GetActiveTabWindow()->AddWindow(m_pReplBuffer, nullptr, RegionLayoutType::VBox);
+    Prompt();
 }
 
-ZepMode_Repl::ZepMode_Repl(ZepEditor& editor, IZepReplProvider* pProvider)
-    : ZepMode(editor),
-    m_pRepl(pProvider)
+void ZepReplExCommand::Prompt()
 {
+    // TODO: Repl broken, but when not, need to consider undo
+    ChangeRecord changeRecord;
+    m_pReplBuffer->Insert(m_pReplBuffer->End(), PromptString, changeRecord);
+    MoveToEnd();
 }
 
-ZepMode_Repl::~ZepMode_Repl()
+void ZepReplExCommand::MoveToEnd()
 {
+    m_pReplWindow->SetBufferCursor(m_pReplBuffer->End());
+    m_startLocation = m_pReplWindow->GetBufferCursor();
 }
 
-void ZepMode_Repl::Close()
+
+bool ZepReplExCommand::AddKeyPress(uint32_t key, uint32_t modifiers)
 {
-    if (m_pCurrentWindow == nullptr)
+    (void)&modifiers;
+    if (key == ExtKeys::RETURN)
     {
-        return;
-    }
-    GetEditor().RemoveBuffer(&GetCurrentWindow()->GetBuffer());
-}
-
-void ZepMode_Repl::AddKeyPress(uint32_t key, uint32_t modifiers)
-{
-    if (m_pCurrentWindow == nullptr)
-    {
-        return;
-    }
-    auto pMode = m_pCurrentWindow->GetBuffer().GetMode();
-
-    GetEditor().ResetLastEditTimer();
-
-    if (key == 'r' && modifiers == ModifierKey::Ctrl)
-    {
-        Close();
-        return;
-    }
-
-    // If not in insert mode, then let the normal mode do its thing
-    if (pMode->GetEditorMode() != Zep::EditorMode::Insert)
-    {
-        // Defer to the global mode for everything that isn't insert
-        GetEditor().GetGlobalMode()->AddKeyPress(key, modifiers);
-
-        // Switched out of the global mode, so back into insert in this mode
-        if (GetEditor().GetGlobalMode()->GetEditorMode() == Zep::EditorMode::Insert)
+        ChangeRecord record;
+        auto& buffer = m_pReplWindow->GetBuffer();
+        std::string str = std::string(buffer.GetWorkingBuffer().begin() + m_startLocation.Index(), buffer.GetWorkingBuffer().end());
+        if (str.size() <= 1)
         {
-            m_pCurrentWindow->SetBufferCursor(MaxCursorMove);
-            pMode->SwitchMode(EditorMode::Insert);
+            MoveToEnd();
+            buffer.GetMode()->SwitchMode(EditorMode::Insert);
+            return false;
         }
 
-        m_currentMode = pMode->GetEditorMode();
-        if (pMode->GetEditorMode() == Zep::EditorMode::Insert)
-        {
-            // Set the cursor to the end of the buffer while inserting text
-            GetCurrentWindow()->SetBufferCursor(MaxCursorMove);
-        }
-        return;
-    }
-  
-    // Set the cursor to the end of the buffer while inserting text
-    GetCurrentWindow()->SetBufferCursor(MaxCursorMove);
-
-    (void)modifiers;
-    if (key == ExtKeys::ESCAPE)
-    {
-        // Escape back to the default normal mode
-        SwitchMode(EditorMode::Normal);
-        m_currentMode = Zep::EditorMode::Normal;
-        return;
-    } 
-    else if (key == ExtKeys::RETURN)
-    {
-        auto& buffer = GetCurrentWindow()->GetBuffer();
-        std::string str = std::string(buffer.GetText().begin() + m_startLocation, buffer.GetText().end());
-        buffer.Insert(buffer.EndLocation(), "\n");
-
-        auto stripLineStarts = [](std::string& str)
-        {
+        auto stripLineStarts = [](std::string& str) {
             bool newline = true;
             int pos = 0;
             while (pos < str.size())
@@ -147,36 +182,36 @@ void ZepMode_Repl::AddKeyPress(uint32_t key, uint32_t modifiers)
         stripLineStarts(str);
 
         std::string ret;
-        if (m_pRepl)
+        if (m_pProvider)
         {
             int indent = 0;
-            bool complete = m_pRepl->ReplIsFormComplete(str, indent);
+            bool complete = m_pProvider->ReplIsFormComplete(str, indent);
             if (!complete)
             {
-                // If the indent is < 0, we completed too much of the expression, so don't let the user hit return until they 
+                // If the indent is < 0, we completed too much of the expression, so don't let the user hit return until they
                 // fix it.  Example in lisp: (+ 2 2))  This expression has 'too many' close brackets.
                 if (indent < 0)
                 {
-                    buffer.Delete(buffer.EndLocation() - 1, buffer.EndLocation());
-                    GetCurrentWindow()->SetBufferCursor(MaxCursorMove);
-                    return;
+                    buffer.Delete(buffer.End() - 1, buffer.End(), record);
+                    m_pReplWindow->SetBufferCursor(buffer.End());
+                    return true;
                 }
-                   
+
                 // New line continuation symbol
-                buffer.Insert(buffer.EndLocation(), ContinuationString);
+                buffer.Insert(buffer.End(), ContinuationString, record);
 
                 // Indent by how far the repl suggests
                 if (indent > 0)
                 {
                     for (int i = 0; i < indent; i++)
                     {
-                        buffer.Insert(buffer.EndLocation(), " ");
+                        buffer.Insert(buffer.End(), " ", record);
                     }
                 }
-                GetCurrentWindow()->SetBufferCursor(MaxCursorMove);
-                return;
+                m_pReplWindow->SetBufferCursor(buffer.End());
+                return true;
             }
-            ret = m_pRepl->ReplParse(str);
+            ret = m_pProvider->ReplParse(str);
         }
         else
         {
@@ -186,76 +221,14 @@ void ZepMode_Repl::AddKeyPress(uint32_t key, uint32_t modifiers)
         if (!ret.empty() && ret[0] != 0)
         {
             ret.push_back('\n');
-            buffer.Insert(buffer.EndLocation(), ret);
+            buffer.Insert(buffer.End(), ret, record);
         }
 
         Prompt();
-        return;
-    }
-    else if (key == ExtKeys::BACKSPACE)
-    {
-        auto cursor = GetCurrentWindow()->GetBufferCursor() - 1;
-        if (cursor >= m_startLocation)
-        {
-            GetCurrentWindow()->GetBuffer().Delete(GetCurrentWindow()->GetBufferCursor() - 1, GetCurrentWindow()->GetBufferCursor());
-        }
-    }
-    else
-    {
-        char c[2];
-        c[0] = (char)key;
-        c[1] = 0;
-        GetCurrentWindow()->GetBuffer().Insert(GetCurrentWindow()->GetBufferCursor(), std::string(c));
+        return true;
     }
 
-    // Ensure cursor is at buffer end
-    GetCurrentWindow()->SetBufferCursor(MaxCursorMove);
-    
-    return;
-}
-
-void ZepMode_Repl::Prompt()
-{
-    if (m_pCurrentWindow == nullptr)
-    {
-        return;
-    }
-
-    // Input arrows
-    auto& buffer = m_pCurrentWindow->GetBuffer();
-    buffer.Insert(buffer.EndLocation(), PromptString);
-
-    MoveToEnd();
-}
-
-void ZepMode_Repl::MoveToEnd()
-{
-    if (m_pCurrentWindow == nullptr)
-    {
-        return;
-    }
-
-    // Input arrows
-    auto& buffer = m_pCurrentWindow->GetBuffer();
-    m_pCurrentWindow->SetBufferCursor(buffer.GetLinePos(buffer.EndLocation(), LineLocation::LineCRBegin));
-    m_startLocation = m_pCurrentWindow->GetBufferCursor();
-}
-
-void ZepMode_Repl::Begin(ZepWindow* pWindow)
-{
-    ZepMode::Begin(pWindow);
-
-    // Default insert mode
-    SwitchMode(EditorMode::Insert);
-
-    GetEditor().SetCommandText("");
-
-    MoveToEnd();
-}
-
-void ZepMode_Repl::Notify(std::shared_ptr<ZepMessage> message)
-{
-    ZepMode::Notify(message);
+    return false;
 }
 
 } // namespace Zep

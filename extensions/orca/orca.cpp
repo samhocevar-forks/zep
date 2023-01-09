@@ -6,7 +6,7 @@
 #include "orca.h"
 #include "syntax_orca.h"
 
-#include <mutils/profile/profile.h>
+#include <mutils/time/profiler.h>
 
 using namespace MUtils;
 using namespace std::chrono;
@@ -15,7 +15,6 @@ namespace Zep
 {
 
 Orca::Orca()
-    : m_eventPool(1000)
 {
 }
 
@@ -86,14 +85,14 @@ void Orca::ReadFromBuffer(ZepBuffer* pBuffer)
 {
     std::unique_lock<std::mutex> lock(m_mutex);
 
-    ByteIndex start, end;
-    pBuffer->GetLineOffsets(0, start, end);
+    ByteRange range;
+    pBuffer->GetLineOffsets(0, range);
 
     // We don't have a pending buffer update to show if we just updated from the buffer
     m_updated.store(false);
 
     // Update field sizes
-    field_resize_raw_if_necessary(&m_field, pBuffer->GetLineCount(), (end - start - 1));
+    field_resize_raw_if_necessary(&m_field, pBuffer->GetLineCount(), (range.second - range.first - 1));
     if (m_lastField.size() < (m_field.width * m_field.height))
     {
         m_lastField.assign(m_field.width * m_field.height, 0);
@@ -102,7 +101,7 @@ void Orca::ReadFromBuffer(ZepBuffer* pBuffer)
     m_size = NVec2i(m_field.width, m_field.height);
 
     // Copy the buffer into the field
-    auto& text = pBuffer->GetText();
+    auto& text = pBuffer->GetWorkingBuffer();
     auto sz = text.size();
     for (int y = 0; y < m_field.height; y++)
     {
@@ -132,14 +131,14 @@ void Orca::WriteToBuffer(ZepBuffer* pBuffer, ZepWindow& window)
         return;
     }
 
-    MUtilsZoneScoped;
+    PROFILE_SCOPE(Orca_WriteToBuffer);
 
     std::unique_lock<std::mutex> lock(m_mutex);
 
     m_lastCursorPos = window.BufferToDisplay();
 
     // Copy the calculated buffer data from the orca buffer
-    auto& text = pBuffer->GetMutableText();
+    auto& text = pBuffer->GetMutableWorkingBuffer();
     for (int y = 0; y < m_field.height; y++)
     {
         for (int x = 0; x < m_field.width; x++)
@@ -169,7 +168,7 @@ void Orca::WriteToBuffer(ZepBuffer* pBuffer, ZepWindow& window)
 // Generate the syntax information for the whole buffer
 void Orca::BuildSyntax()
 {
-    MUtilsZoneScoped;
+    PROFILE_SCOPE(Orca_BuildSyntax);
 
     m_syntax.resize((m_field.width + 1) * m_field.height);
 
@@ -339,16 +338,14 @@ void Orca::Quit()
     TimeProvider::Instance().UnRegisterConsumer(this);
 }
 
-void Orca::AddTickEvent(MUtils::TimeLineEvent* pEv)
+void Orca::Tick()
 {
-    ZEP_UNUSED(pEv);
-
     if (!m_enable.load() && !m_step.load())
     {
         return;
     }
 
-    MUtilsZoneScopedN("Orca Engine");
+    PROFILE_SCOPE(Orca_Tick);
 
     auto& tp = TimeProvider::Instance();
 
@@ -387,17 +384,10 @@ void Orca::AddTickEvent(MUtils::TimeLineEvent* pEv)
                 // TODO: For now, play at next beat
                 // We know that m_time is 'on' the engine's beat
                 // Note: need time to be unique??!
-                auto time = pEv->m_time + nanoseconds(i) + tp.GetTimePerBeat() * 4;
+                auto time = TimeProvider::Instance().Now() + nanoseconds(i) + tp.GetTimePerBeat() * 4;
 
                 // Submit event
-                auto pEvent = m_eventPool.Alloc();
-                pEvent->SetTime(time, duration_cast<milliseconds>(duration));
-                pEvent->velocity = float(velocity);
-                pEvent->midiNote = note;
-                pEvent->pressed = true;
-                pEvent->channelId = note;
-
-                tp.StoreTimeEvent(pEvent);
+                sigPlayNote(std::chrono::duration_cast<std::chrono::milliseconds>(duration), float(velocity), note);
             }
         }
 

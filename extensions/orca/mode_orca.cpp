@@ -41,6 +41,7 @@ ZepMode_Orca::~ZepMode_Orca()
     for(auto itrPair : m_mapOrca) 
     {
         itrPair.second->Quit();
+        sigRemoveOrca(itrPair.second.get());
     }
     m_mapOrca.clear();
 }
@@ -146,8 +147,9 @@ bool ZepMode_Orca::HandleSpecialCommand(CommandContext& context)
         // Step at current rate; this just queues a step to occur
         pOrca->Step();
 
-        // We don't want to interfere with the regular tick of the time provider, so manually tick orca
-        TimeProvider::Instance().Beat();
+        /// We don't want to interfere with the regular tick of the time provider, so manually tick orca
+        // TODO: How to frame step?
+        //TimeProvider::Instance().Beat();
 
         return true;
     }
@@ -196,6 +198,7 @@ void ZepMode_Orca::Begin(ZepWindow* pWindow)
     pOrca->Init(GetEditor());
     pOrca->ReadFromBuffer(pBuffer);
     pOrca->Enable(true);
+    sigAddOrca(pOrca.get());
 }
 
 std::vector<Airline> ZepMode_Orca::GetAirlines(ZepWindow& win) const
@@ -250,9 +253,9 @@ void ZepMode_Orca::PreDisplay(ZepWindow& window)
     {
         m_bufferHeight = pBuffer->GetLineCount();
 
-        ByteIndex start, end;
-        pBuffer->GetLineOffsets(0, start, end);
-        m_bufferWidth = end - start;
+        ByteRange range;
+        pBuffer->GetLineOffsets(0, range);
+        m_bufferWidth = range.second - range.first;
     }
     else
     {

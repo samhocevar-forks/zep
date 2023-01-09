@@ -1,7 +1,10 @@
+
 SET(ZEP_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
 
 SET(ZEP_SOURCE
 ${ZEP_ROOT}/include/zep/buffer.h
+${ZEP_ROOT}/include/zep/range_markers.h
+${ZEP_ROOT}/include/zep/glyph_iterator.h
 ${ZEP_ROOT}/include/zep/commands.h
 ${ZEP_ROOT}/include/zep/display.h
 ${ZEP_ROOT}/include/zep/editor.h
@@ -27,11 +30,14 @@ ${ZEP_ROOT}/include/zep/syntax.h
 ${ZEP_ROOT}/include/zep/syntax_providers.h
 ${ZEP_ROOT}/include/zep/syntax_rainbow_brackets.h
 ${ZEP_ROOT}/include/zep/syntax_tree.h
+${ZEP_ROOT}/include/zep/syntax_markdown.h
 ${ZEP_ROOT}/include/zep/tab_window.h
 ${ZEP_ROOT}/include/zep/theme.h
 ${ZEP_ROOT}/include/zep/window.h
 ${ZEP_ROOT}/src/CMakeLists.txt
 ${ZEP_ROOT}/src/buffer.cpp
+${ZEP_ROOT}/src/range_markers.cpp
+${ZEP_ROOT}/src/glyph_iterator.cpp
 ${ZEP_ROOT}/src/commands.cpp
 ${ZEP_ROOT}/src/display.cpp
 ${ZEP_ROOT}/src/editor.cpp
@@ -54,6 +60,7 @@ ${ZEP_ROOT}/src/syntax.cpp
 ${ZEP_ROOT}/src/syntax_providers.cpp
 ${ZEP_ROOT}/src/syntax_rainbow_brackets.cpp
 ${ZEP_ROOT}/src/syntax_tree.cpp
+${ZEP_ROOT}/src/syntax_markdown.cpp
 ${ZEP_ROOT}/src/tab_window.cpp
 ${ZEP_ROOT}/src/theme.cpp
 ${ZEP_ROOT}/src/window.cpp
@@ -78,6 +85,13 @@ target_include_directories(Zep
         $<INSTALL_INTERFACE:include>
     ) 
 
+if (TARGET_LINUX)
+target_link_libraries(Zep
+	PUBLIC
+	stdc++fs
+)
+endif()
+
 # Set locations for components
 set_target_properties(Zep PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
@@ -93,6 +107,11 @@ install(TARGETS Zep
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${LIBLEGACY_INCLUDE_DIRS}
 )
+
+# Workaround for if this file is included as part of another project 
+if (NOT DEFINED CMAKE_INSTALL_INCLUDEDIR)
+set (CMAKE_INSTALL_INCLUDEDIR ${ZEP_ROOT}/bin/zep)
+endif()
 
 # Install the include files
 install(DIRECTORY ${ZEP_ROOT}/include/zep

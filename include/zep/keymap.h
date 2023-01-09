@@ -39,6 +39,7 @@ DECLARE_COMMANDID(VisualAppendToLine)
 DECLARE_COMMANDID(VisualAppend)
 DECLARE_COMMANDID(VisualInsertAtFirstChar)
 DECLARE_COMMANDID(FindNext)
+DECLARE_COMMANDID(FindNextDelimiter)
 DECLARE_COMMANDID(NextMarker)
 DECLARE_COMMANDID(PreviousMarker)
 DECLARE_COMMANDID(MotionNextFirstChar)
@@ -72,6 +73,7 @@ DECLARE_COMMANDID(ChangeAWord)
 DECLARE_COMMANDID(ChangeAWORD)
 DECLARE_COMMANDID(ChangeInnerWord)
 DECLARE_COMMANDID(ChangeInnerWORD)
+DECLARE_COMMANDID(ChangeIn)
 DECLARE_COMMANDID(ChangeToChar)
 
 DECLARE_COMMANDID(Replace)
@@ -104,8 +106,10 @@ DECLARE_COMMANDID(MotionNextSearch)
 DECLARE_COMMANDID(MotionPreviousSearch)
 
 DECLARE_COMMANDID(MotionLineEnd)
+DECLARE_COMMANDID(MotionLineBeyondEnd)
 DECLARE_COMMANDID(MotionLineBegin)
 DECLARE_COMMANDID(MotionLineFirstChar)
+DECLARE_COMMANDID(MotionLineHomeToggle)
 
 DECLARE_COMMANDID(MotionRightSplit)
 DECLARE_COMMANDID(MotionLeftSplit)
@@ -116,7 +120,6 @@ DECLARE_COMMANDID(MotionDown)
 DECLARE_COMMANDID(MotionUp)
 DECLARE_COMMANDID(MotionLeft)
 DECLARE_COMMANDID(MotionRight)
-
 
 DECLARE_COMMANDID(MotionWord)
 DECLARE_COMMANDID(MotionBackWord)
@@ -142,6 +145,8 @@ DECLARE_COMMANDID(NextTabWindow)
 // Standard mode commands
 DECLARE_COMMANDID(StandardCopy)
 DECLARE_COMMANDID(StandardPaste)
+
+DECLARE_COMMANDID(StandardSelectAll)
 
 DECLARE_COMMANDID(MotionStandardDown)
 DECLARE_COMMANDID(MotionStandardUp)
@@ -205,7 +210,7 @@ struct KeyMapResult
     {
         if (captureRegisters.empty())
         {
-            return '"';
+            return 0;
         }
         return captureRegisters[0];
     }

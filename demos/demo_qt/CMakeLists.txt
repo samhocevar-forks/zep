@@ -9,8 +9,13 @@ set(CMAKE_PREFIX_PATH $ENV{QT_INSTALL_LOCATION})
 
 # Note: The SDL2 package is required by the MUtils dependency; it isn't really used for the Qt demo
 find_package(SDL2 REQUIRED)
+
+# Used Packages
+include(CMakePackageConfigHelpers)
+
 find_package(MUtils REQUIRED)
-find_package(Qt5 COMPONENTS Core Widgets Gui REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets Gui REQUIRED)
+
 set_property(GLOBAL PROPERTY AUTOMOC_FOLDER Automoc)
 set_property(GLOBAL PROPERTY AUTOGEN_TARGETS_FOLDER Automoc)
 
@@ -52,20 +57,21 @@ target_include_directories(${DEMO_NAME}
         ${DEMO_ROOT}/demo_qt
         ${ZEP_ROOT}/src/qt
         ${ZEP_ROOT}/demos
-        ${Qt5Widgets_INCLUDE_DIRS}
-        ${Qt5Gui_INCLUDE_DIRS}
-        ${Qt5Core_INCLUDE_DIRS}
+        ${Qt6Widgets_INCLUDE_DIRS}
+        ${Qt6Gui_INCLUDE_DIRS}
+        ${Qt6Core_INCLUDE_DIRS}
         ${CMAKE_BINARY_DIR}
         ${M3RDPARTY_DIR}
         ${ZEP_ROOT}/include)
 
 target_link_libraries(${DEMO_NAME} PRIVATE 
-    Qt5::Core
-    Qt5::Gui
-    Qt5::Widgets
+    MUtils::MUtils 
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
     Zep
     ZepExtensions
-    MUtils::MUtils 
+    #efsw::efsw 
     ${PLATFORM_LINKLIBS})
 
 target_compile_options(${DEMO_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W3>) # Workaround Qt + MSVC 19 compile issue in release build.
@@ -116,9 +122,9 @@ install(DIRECTORY ${ZEP_ROOT}/include/zep
 # NOTE:
 # This unfortunate mess is handling the problem of deploying Qt into the install folder.
 # It takes the Qt deploy application output into a folder and copies it to the install location
-if(Qt5_FOUND AND WIN32 AND TARGET Qt5::qmake AND NOT TARGET Qt5::windeployqt)
+if(Qt6_FOUND AND WIN32 AND TARGET Qt6::qmake AND NOT TARGET Qt6::windeployqt)
     MESSAGE(STATUS "Found Qt for deploy")
-    get_target_property(_qt5_qmake_location Qt5::qmake IMPORTED_LOCATION)
+    get_target_property(_qt6_qmake_location Qt6::qmake IMPORTED_LOCATION)
 
     execute_process(
         COMMAND "${_qt5_qmake_location}" -query QT_INSTALL_PREFIX
@@ -130,21 +136,21 @@ if(Qt5_FOUND AND WIN32 AND TARGET Qt5::qmake AND NOT TARGET Qt5::windeployqt)
     set(imported_location "${qt5_install_prefix}/bin/windeployqt.exe")
 
     if(EXISTS ${imported_location})
-        add_executable(Qt5::windeployqt IMPORTED)
+        add_executable(Qt6::windeployqt IMPORTED)
 
-        set_target_properties(Qt5::windeployqt PROPERTIES
+        set_target_properties(Qt6::windeployqt PROPERTIES
             IMPORTED_LOCATION ${imported_location}
         )
     endif()
 endif()
 
-if(TARGET Qt5::windeployqt)
+if(TARGET Qt6::windeployqt)
     # execute windeployqt in a tmp directory after build
     add_custom_command(TARGET ${DEMO_NAME}
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/windeployqt"
         COMMAND set PATH=%PATH%$<SEMICOLON>${qt5_install_prefix}/bin
-        COMMAND Qt5::windeployqt --dir "${CMAKE_CURRENT_BINARY_DIR}/windeployqt" "$<TARGET_FILE_DIR:${DEMO_NAME}>/$<TARGET_FILE_NAME:${DEMO_NAME}>"
+        COMMAND Qt6::windeployqt --dir "${CMAKE_CURRENT_BINARY_DIR}/windeployqt" "$<TARGET_FILE_DIR:${DEMO_NAME}>/$<TARGET_FILE_NAME:${DEMO_NAME}>"
     )
 
     # copy deployment directory during installation

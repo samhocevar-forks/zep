@@ -3,30 +3,27 @@
 // (SDL is a cross-platform general purpose library for handling windows, inputs, OpenGL/Vulkan graphics context creation, etc.)
 // (GL3W is a helper library to access OpenGL functions since there is no standard header to access modern OpenGL functions easily. Alternatives are GLEW, Glad, etc.)
 
-#define NOMINMAX
-
 #include <SDL.h>
 #include <stdio.h>
 #include <thread>
 
 #include <imgui/imgui.h>
 
-#include <imgui/examples/imgui_impl_opengl3.h>
-#include <imgui/examples/imgui_impl_sdl.h>
-#include <imgui/misc/freetype/imgui_freetype.h>
+#include <imgui/imgui_freetype.h>
+#include <imgui/imgui_impl_opengl3.h>
+#include <imgui/imgui_impl_sdl.h>
 
 #include <clip/clip.h>
 #include <mutils/time/time_provider.h>
 
-#include <zep/mcommon/animation/timer.h>
+#include <clipp.h>
 #include <mutils/chibi/chibi.h>
 #include <mutils/file/file.h>
-#include <mutils/logger/logger.h>
-#include <mutils/profile/profile.h>
-#include <tclap/CmdLine.h>
+#include <mutils/time/profiler.h>
+#include <mutils/ui/dpi.h>
+#include <zep/mcommon/animation/timer.h>
 
 #include "config_app.h"
-
 
 // About OpenGL function loaders: modern OpenGL doesn't have a standard header file and requires individual function pointers to be loaded manually.
 // Helper libraries are often used for this purpose! Here we are supporting a few common ones: gl3w, glew, glad.
@@ -45,6 +42,7 @@
 
 #undef max
 
+#include "zep/filesystem.h"
 #include "zep/imgui/display_imgui.h"
 #include "zep/imgui/editor_imgui.h"
 #include "zep/mode_standard.h"
@@ -58,9 +56,11 @@
 
 #include "zep/regress.h"
 
-#include <tfd/tinyfiledialogs.h>
-
+#include <tinyfiledialogs/tinyfiledialogs.h>
 #ifndef __APPLE__
+//#define WATCHER 1
+#endif
+#ifdef WATCHER
 #include <FileWatcher/watcher.h>
 #endif
 #define _MATH_DEFINES_DEFINED
@@ -100,85 +100,89 @@ void main()
 
 std::string startupFile;
 
-NVec2f GetDisplayScale()
+Zep::NVec2f GetPixelScale()
 {
     float ddpi = 0.0f;
     float hdpi = 0.0f;
     float vdpi = 0.0f;
-    auto res = SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi);
+
+    auto window = SDL_GL_GetCurrentWindow();
+    auto index = window ? SDL_GetWindowDisplayIndex(window) : 0;
+
+    auto res = SDL_GetDisplayDPI(index, &ddpi, &hdpi, &vdpi);
     if (res == 0 && hdpi != 0)
     {
-        return NVec2f(hdpi, vdpi) / 96.0f;
+        return Zep::NVec2f(hdpi, vdpi) / 96.0f;
     }
-    return NVec2f(1.0f);
+    return Zep::NVec2f(1.0f);
 }
 
 } // namespace
 
-bool ReadCommandLine(int argc, char** argv, int& exitCode)
-{
-    try
-    {
-        TCLAP::CmdLine cmd("Zep", ' ', "0.1");
-        TCLAP::UnlabeledValueArg<std::string> fileArg("file", "filename", false, "", "string");
-        cmd.setExceptionHandling(false);
-        cmd.ignoreUnmatched(false);
+using namespace clipp;
 
-        cmd.add(fileArg);
-        if (argc != 0)
-        {
-            cmd.parse(argc, argv);
-            startupFile = fileArg.getValue();
-        }
-        exitCode = 0;
-    }
-    catch (TCLAP::ArgException& e) // catch any exceptions
+bool ReadCommandLine(int argc, char* argv[], int& exitCode)
+{
+    startupFile = "";
+    auto cli = group(opt_value("input file", startupFile));
+    if (!parse(argc, argv, cli))
     {
-        // Report argument exceptions to the message box
-        std::ostringstream strError;
-        strError << e.argId() << " : " << e.error();
-        //UIManager::Instance().AddMessage(MessageType::Error | MessageType::System, strError.str());
-        exitCode = 1;
+        //ZLOG(INFO, "Failed parse: " << make_man_page(cli, argv[0]));
         return false;
-    }
-    catch (TCLAP::ExitException& e)
-    {
-        // Allow PC app to continue, and ignore exit due to help/version
-        // This avoids the danger that the user passed --help on the command line and wondered why the app just exited
-        exitCode = e.getExitStatus();
-        return true;
     }
     return true;
 }
 
 // A helper struct to init the editor and handle callbacks
-struct ZepContainer : public IZepComponent, public IZepReplProvider
+struct ZepContainerImGui : public IZepComponent, public IZepReplProvider
 {
-    ZepContainer(const std::string& startupFilePath)
-        : spEditor(std::make_unique<ZepEditor_ImGui>(ZEP_ROOT))
+    ZepContainerImGui(const std::string& startupFilePath, const std::string& configPath)
+        : spEditor(std::make_unique<ZepEditor_ImGui>(configPath, GetPixelScale()))
+        //, fileWatcher(spEditor->GetFileSystem().GetConfigPath(), std::chrono::seconds(2))
     {
-
-        // File watcher not used on apple yet ; needs investigating as to why it doesn't compile/run
-#ifndef __APPLE__
-        MUtils::Watcher::Instance().AddWatch(
-            ZEP_ROOT, [&](const ZepPath& path) {
-                if (spEditor)
-                {
-                    spEditor->OnFileChanged(ZepPath(ZEP_ROOT) / path);
-                }
-            },
-            false);
-#endif
-
         chibi_init(scheme, SDL_GetBasePath());
 
+        // ZepEditor_ImGui will have created the fonts for us; but we need to build
+        // the font atlas
+        auto fontPath = std::string(SDL_GetBasePath()) + "Cousine-Regular.ttf";
+        auto& display = static_cast<ZepDisplay_ImGui&>(spEditor->GetDisplay());
+
+        int fontPixelHeight = (int)dpi_pixel_height_from_point_size(DemoFontPtSize, GetPixelScale().y);
+
+        auto& io = ImGui::GetIO();
+        ImVector<ImWchar> ranges;
+        ImFontGlyphRangesBuilder builder;
+        builder.AddRanges(io.Fonts->GetGlyphRangesDefault()); // Add one of the default ranges
+        builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic()); // Add one of the default ranges
+        builder.AddRanges(greek_range);
+        builder.BuildRanges(&ranges); // Build the final result (ordered ranges with all the unique characters submitted)
+
+        ImFontConfig cfg;
+        cfg.OversampleH = 4;
+        cfg.OversampleV = 4;
+
+        auto pImFont = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), float(fontPixelHeight), &cfg, ranges.Data);
+
+        display.SetFont(ZepTextType::UI, std::make_shared<ZepFont_ImGui>(display, pImFont, fontPixelHeight));
+        display.SetFont(ZepTextType::Text, std::make_shared<ZepFont_ImGui>(display, pImFont, fontPixelHeight));
+        display.SetFont(ZepTextType::Heading1, std::make_shared<ZepFont_ImGui>(display, pImFont, int(fontPixelHeight * 1.75)));
+        display.SetFont(ZepTextType::Heading2, std::make_shared<ZepFont_ImGui>(display, pImFont, int(fontPixelHeight * 1.5)));
+        display.SetFont(ZepTextType::Heading3, std::make_shared<ZepFont_ImGui>(display, pImFont, int(fontPixelHeight * 1.25)));
+
+        unsigned int flags = 0; // ImGuiFreeType::NoHinting;
+        ImGuiFreeType::BuildFontAtlas(ImGui::GetIO().Fonts, flags);
+
         spEditor->RegisterCallback(this);
-        spEditor->SetPixelScale(GetDisplayScale());
 
         ZepMode_Orca::Register(*spEditor);
 
         ZepRegressExCommand::Register(*spEditor);
+
+        // Repl
         ZepReplExCommand::Register(*spEditor, this);
+        ZepReplEvaluateOuterCommand::Register(*spEditor, this);
+        ZepReplEvaluateInnerCommand::Register(*spEditor, this);
+        ZepReplEvaluateCommand::Register(*spEditor, this);
 
         if (!startupFilePath.empty())
         {
@@ -188,16 +192,64 @@ struct ZepContainer : public IZepComponent, public IZepReplProvider
         {
             spEditor->InitWithText("Shader.vert", shader);
         }
+
+        // File watcher not used on apple yet ; needs investigating as to why it doesn't compile/run
+        // The watcher is being used currently to update the config path, but clients may want to do more interesting things
+        // by setting up watches for the current dir, etc.
+        /*fileWatcher.start([=](std::string path, FileStatus status) {
+            if (spEditor)
+            {
+                ZLOG(DBG, "Config File Change: " << path);
+                spEditor->OnFileChanged(spEditor->GetFileSystem().GetConfigPath() / path);
+            }
+        });*/
     }
 
-    ZepContainer()
+    ~ZepContainerImGui()
     {
-        spEditor->UnRegisterCallback(this);
     }
 
     void Destroy()
     {
+        spEditor->UnRegisterCallback(this);
         spEditor.reset();
+    }
+
+    virtual std::string ReplParse(ZepBuffer& buffer, const GlyphIterator& cursorOffset, ReplParseType type) override
+    {
+        ZEP_UNUSED(cursorOffset);
+        ZEP_UNUSED(type);
+
+        GlyphRange range;
+        if (type == ReplParseType::OuterExpression)
+        {
+            range = buffer.GetExpression(ExpressionType::Outer, cursorOffset, { '(' }, { ')' });
+        }
+        else if (type == ReplParseType::SubExpression)
+        {
+            range = buffer.GetExpression(ExpressionType::Inner, cursorOffset, { '(' }, { ')' });
+        }
+        else
+        {
+            range = GlyphRange(buffer.Begin(), buffer.End());
+        }
+
+        if (range.first >= range.second)
+            return "<No Expression>";
+
+        const auto& text = buffer.GetWorkingBuffer();
+        auto eval = std::string(text.begin() + range.first.Index(), text.begin() + range.second.Index());
+
+        // Flash the evaluated expression
+        FlashType flashType = FlashType::Flash;
+        float time = 1.0f;
+        buffer.BeginFlash(time, flashType, range);
+
+        auto ret = chibi_repl(scheme, NULL, eval);
+        ret = RTrim(ret);
+
+        GetEditor().SetCommandText(ret);
+        return ret;
     }
 
     virtual std::string ReplParse(const std::string& str) override
@@ -248,13 +300,7 @@ struct ZepContainer : public IZepComponent, public IZepReplProvider
     // Inherited via IZepComponent
     virtual void Notify(std::shared_ptr<ZepMessage> message) override
     {
-        if (message->messageId == Msg::Tick)
-        {
-#ifndef __APPLE__
-            MUtils::Watcher::Instance().Update();
-#endif
-        }
-        else if (message->messageId == Msg::GetClipBoard)
+        if (message->messageId == Msg::GetClipBoard)
         {
             clip::get_text(message->str);
             message->handled = true;
@@ -271,26 +317,26 @@ struct ZepContainer : public IZepComponent, public IZepReplProvider
         else if (message->messageId == Msg::ToolTip)
         {
             auto spTipMsg = std::static_pointer_cast<ToolTipMessage>(message);
-            if (spTipMsg->location != -1l && spTipMsg->pBuffer)
+            if (spTipMsg->location.Valid() && spTipMsg->pBuffer)
             {
                 auto pSyntax = spTipMsg->pBuffer->GetSyntax();
                 if (pSyntax)
                 {
                     if (pSyntax->GetSyntaxAt(spTipMsg->location).foreground == ThemeColor::Identifier)
                     {
-                        auto spMarker = std::make_shared<RangeMarker>();
-                        spMarker->description = "This is an identifier";
-                        spMarker->highlightColor = ThemeColor::Identifier;
-                        spMarker->textColor = ThemeColor::Text;
+                        auto spMarker = std::make_shared<RangeMarker>(*spTipMsg->pBuffer);
+                        spMarker->SetDescription("This is an identifier");
+                        spMarker->SetHighlightColor(ThemeColor::Identifier);
+                        spMarker->SetTextColor(ThemeColor::Text);
                         spTipMsg->spMarker = spMarker;
                         spTipMsg->handled = true;
                     }
                     else if (pSyntax->GetSyntaxAt(spTipMsg->location).foreground == ThemeColor::Keyword)
                     {
-                        auto spMarker = std::make_shared<RangeMarker>();
-                        spMarker->description = "This is a keyword";
-                        spMarker->highlightColor = ThemeColor::Keyword;
-                        spMarker->textColor = ThemeColor::Text;
+                        auto spMarker = std::make_shared<RangeMarker>(*spTipMsg->pBuffer);
+                        spMarker->SetDescription("This is a keyword");
+                        spMarker->SetHighlightColor(ThemeColor::Keyword);
+                        spMarker->SetTextColor(ThemeColor::Text);
                         spTipMsg->spMarker = spMarker;
                         spTipMsg->handled = true;
                     }
@@ -306,16 +352,18 @@ struct ZepContainer : public IZepComponent, public IZepReplProvider
 
     bool quit = false;
     std::unique_ptr<ZepEditor_ImGui> spEditor;
-    //malEnvPtr spEnv;
+    //FileWatcher fileWatcher;
 };
 
-int main(int argc, char** argv)
+int main(int argc, char* argv[])
 {
     //::AllocConsole();
-    int code;
-    ReadCommandLine(argc, argv, code);
-    if (code != 0)
-        return code;
+    int code = 0;
+    if (!ReadCommandLine(argc, argv, code))
+    {
+        if (code != 0)
+            return code;
+    }
 
     // Setup SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
@@ -353,14 +401,19 @@ int main(int argc, char** argv)
     int startWidth = uint32_t(current.w * .6666);
     int startHeight = uint32_t(startWidth / ratio);
 
+    ZLOG(INFO, "Start Size: " << Zep::NVec2i(startWidth, startHeight));
+
     SDL_Window* window = SDL_CreateWindow("Zep", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, startWidth, startHeight, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     SDL_GL_SetSwapInterval(0); // Enable vsync
 
-    int x, y;
-    SDL_GL_GetDrawableSize(window, &x, &y);
-    Zep::LOG(Zep::DEBUG) << "Draw   Area: " << x << "," << y;
-    Zep::LOG(Zep::DEBUG) << "Window Area: " << startWidth << "," << startHeight;
+    MUtils::NVec2i winSize;
+    MUtils::NVec2i targetSize;
+    SDL_GetWindowSize(window, &winSize.x, &winSize.y);
+    SDL_GL_GetDrawableSize(window, &targetSize.x, &targetSize.y);
+
+    ZLOG(INFO, "Screen Window Size: " << winSize);
+    ZLOG(INFO, "Drawable Size: " << targetSize);
 
     // Initialize OpenGL loader
 #if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
@@ -386,33 +439,16 @@ int main(int argc, char** argv)
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
+    // ** Zep specific code, before Initializing font map
+    ZepContainerImGui zep(startupFile, SDL_GetBasePath());
+
     // Setup style
     ImGui::StyleColorsDark();
 
-    ImVector<ImWchar> ranges;
-    ImFontGlyphRangesBuilder builder;
-    builder.AddRanges(io.Fonts->GetGlyphRangesDefault()); // Add one of the default ranges
-    builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic()); // Add one of the default ranges
-    //builder.AddRanges(io.Fonts->GetGlyphRangesThai()); // Add one of the default ranges
-    ImWchar greek_range[] = { 0x300, 0x52F, 0x1f00, 0x1fff, 0, 0 };
-    builder.AddRanges(greek_range);
-    builder.BuildRanges(&ranges); // Build the final result (ordered ranges with all the unique characters submitted)
-
-    ImFontConfig cfg;
-    cfg.OversampleH = 3;
-    cfg.OversampleV = 3;
-
-    float fontPixelHeight = FontHeightPixelsFromPointSize(DemoFontPtSize, GetDisplayScale().y);
-    io.Fonts->AddFontFromFileTTF((std::string(SDL_GetBasePath()) + "Cousine-Regular.ttf").c_str(), fontPixelHeight, &cfg, ranges.Data);
-
-    unsigned int flags = 0; // ImGuiFreeType::NoHinting;
-    ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
+    ZLOG(INFO, "DPI Scale: " << MUtils::NVec2f(GetPixelScale().x, GetPixelScale().y));
 
     bool show_demo_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // ** Zep specific code
-    ZepContainer zep(startupFile);
 
     MUtils::TimeProvider::Instance().StartThread();
 
@@ -420,6 +456,8 @@ int main(int argc, char** argv)
     bool done = false;
     while (!done && !zep.quit)
     {
+        Profiler::NewFrame();
+
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
@@ -476,19 +514,22 @@ int main(int argc, char** argv)
                     if (openFileName != nullptr)
                     {
                         auto pBuffer = zep.GetEditor().GetFileBuffer(openFileName);
-                        zep.GetEditor().GetActiveTabWindow()->GetActiveWindow()->SetBuffer(pBuffer);
+                        if (pBuffer)
+                        {
+                            zep.GetEditor().EnsureWindow(*pBuffer);
+                        }
                     }
                 }
                 ImGui::EndMenu();
             }
 
-            const auto& buffer = zep.GetEditor().GetActiveTabWindow()->GetActiveWindow()->GetBuffer();
+            const auto pBuffer = zep.GetEditor().GetActiveBuffer();
 
             if (ImGui::BeginMenu("Settings"))
             {
-                if (ImGui::BeginMenu("Editor Mode"))
+                if (ImGui::BeginMenu("Editor Mode", pBuffer))
                 {
-                    bool enabledVim = strcmp(buffer.GetMode()->Name(), Zep::ZepMode_Vim::StaticName()) == 0;
+                    bool enabledVim = strcmp(pBuffer->GetMode()->Name(), Zep::ZepMode_Vim::StaticName()) == 0;
                     bool enabledNormal = !enabledVim;
                     if (ImGui::MenuItem("Vim", "CTRL+2", &enabledVim))
                     {
@@ -522,13 +563,14 @@ int main(int argc, char** argv)
             if (ImGui::BeginMenu("Window"))
             {
                 auto pTabWindow = zep.GetEditor().GetActiveTabWindow();
-                if (ImGui::MenuItem("Horizontal Split"))
+                bool selected = false;
+                if (ImGui::MenuItem("Horizontal Split", "", &selected, pBuffer != nullptr))
                 {
-                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), RegionLayoutType::VBox);
+                    pTabWindow->AddWindow(pBuffer, pTabWindow->GetActiveWindow(), RegionLayoutType::VBox);
                 }
-                else if (ImGui::MenuItem("Vertical Split"))
+                else if (ImGui::MenuItem("Vertical Split", "", &selected, pBuffer != nullptr))
                 {
-                    pTabWindow->AddWindow(&pTabWindow->GetActiveWindow()->GetBuffer(), pTabWindow->GetActiveWindow(), RegionLayoutType::HBox);
+                    pTabWindow->AddWindow(pBuffer, pTabWindow->GetActiveWindow(), RegionLayoutType::HBox);
                 }
                 ImGui::EndMenu();
             }
@@ -575,7 +617,7 @@ int main(int argc, char** argv)
         // Fill the window
         max.x = min.x + max.x;
         max.y = min.y + max.y;
-        zep.spEditor->SetDisplayRegion(NVec2f(min.x, min.y), NVec2f(max.x, max.y));
+        zep.spEditor->SetDisplayRegion(Zep::NVec2f(min.x, min.y), Zep::NVec2f(max.x, max.y));
 
         // Display the editor inside this window
         zep.spEditor->Display();
@@ -597,8 +639,6 @@ int main(int argc, char** argv)
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
-
-        MUtilsFrameMark;
     }
 
     // Quit the ticker
@@ -606,7 +646,7 @@ int main(int argc, char** argv)
 
     zep.Destroy();
     chibi_destroy(scheme);
-    
+
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();

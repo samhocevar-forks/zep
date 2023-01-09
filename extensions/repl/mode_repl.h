@@ -1,6 +1,6 @@
 #pragma once
 
-#include "zep/mode.h"
+#include <zep/mode.h>
 #include <future>
 #include <memory>
 #include <regex>
@@ -8,15 +8,32 @@
 namespace Zep
 {
 
+enum class ReplParseType
+{
+    SubExpression,
+    OuterExpression,
+    Line,
+    All
+};
+
 // A provider that can handle repl commands
 // This is just a default repl that does nothing; if you want to provide a repl 
 // you need to register this interface and handle the messages to run the repl.
 struct IZepReplProvider
 {
-    virtual std::string ReplParse(const std::string& input) 
+    virtual std::string ReplParse(ZepBuffer& text, const GlyphIterator& cursorOffset, ReplParseType type)
     {
-        // Just reflect the input
-        return input;
+        ZEP_UNUSED(text);
+        ZEP_UNUSED(cursorOffset);
+        ZEP_UNUSED(type);
+
+        return "<Supply IZepReplProvider>";
+    }
+
+    virtual std::string ReplParse(const std::string& text) 
+    {
+        ZEP_UNUSED(text);
+        return "<Supply IZepReplProvider>";
     };
     virtual bool ReplIsFormComplete(const std::string& input, int& depth)
     {
@@ -34,42 +51,73 @@ public:
 
     static void Register(ZepEditor& editor, IZepReplProvider* pProvider);
     
-    virtual void Notify(std::shared_ptr<ZepMessage> message) override { ZEP_UNUSED(message); }
     virtual void Run(const std::vector<std::string>& args) override;
     virtual const char* ExCommandName() const override { return "ZRepl"; }
+    virtual const KeyMap* GetKeyMappings(ZepMode&) const override { return &m_keymap; }
+
+    virtual bool AddKeyPress(uint32_t key, uint32_t modifiers);
+
+private:
+    void Prompt();
+    void MoveToEnd();
+
+private:
+    IZepReplProvider* m_pProvider = nullptr;
+    ZepBuffer* m_pReplBuffer = nullptr;
+    ZepWindow* m_pReplWindow = nullptr;
+    KeyMap m_keymap;
+    GlyphIterator m_startLocation;
+    bool m_ignoreMessages = false;
+};
+
+class ZepReplEvaluateOuterCommand : public ZepExCommand
+{
+public:
+    ZepReplEvaluateOuterCommand(ZepEditor& editor, IZepReplProvider* pProvider);
+
+    static void Register(ZepEditor& editor, IZepReplProvider* pProvider);
+    
+    virtual void Notify(std::shared_ptr<ZepMessage> message) override { ZEP_UNUSED(message); }
+    virtual void Run(const std::vector<std::string>& args) override;
+    virtual const char* ExCommandName() const override { return "ZReplEvalOuter"; }
     virtual const KeyMap* GetKeyMappings(ZepMode&) const override { return &m_keymap; }
 private:
     IZepReplProvider* m_pProvider = nullptr;
     KeyMap m_keymap;
 };
 
-class ZepMode_Repl : public ZepMode
+class ZepReplEvaluateCommand : public ZepExCommand
 {
 public:
-    ZepMode_Repl(ZepEditor& editor, IZepReplProvider* provider);
-    ~ZepMode_Repl();
+    ZepReplEvaluateCommand(ZepEditor& editor, IZepReplProvider* pProvider);
 
-    virtual void AddKeyPress(uint32_t key, uint32_t modifiers = 0) override;
-    virtual void Begin(ZepWindow* pWindow) override;
-    virtual void Notify(std::shared_ptr<ZepMessage> message) override;
+    static void Register(ZepEditor& editor, IZepReplProvider* pProvider);
     
-    static const char* StaticName()
-    {
-        return "REPL";
-    }
-    virtual const char* Name() const override
-    {
-        return StaticName();
-    }
-
-    void Prompt();
-    void MoveToEnd();
+    virtual void Notify(std::shared_ptr<ZepMessage> message) override { ZEP_UNUSED(message); }
+    virtual void Run(const std::vector<std::string>& args) override;
+    virtual const char* ExCommandName() const override { return "ZReplEval"; }
+    virtual const KeyMap* GetKeyMappings(ZepMode&) const override { return &m_keymap; }
 private:
-    void Close();
-
-private:
-    ByteIndex m_startLocation = ByteIndex{ 0 };
-    IZepReplProvider* m_pRepl;
+    IZepReplProvider* m_pProvider = nullptr;
+    KeyMap m_keymap;
 };
+
+class ZepReplEvaluateInnerCommand : public ZepExCommand
+{
+public:
+    ZepReplEvaluateInnerCommand(ZepEditor& editor, IZepReplProvider* pProvider);
+
+    static void Register(ZepEditor& editor, IZepReplProvider* pProvider);
+    
+    virtual void Notify(std::shared_ptr<ZepMessage> message) override { ZEP_UNUSED(message); }
+    virtual void Run(const std::vector<std::string>& args) override;
+    virtual const char* ExCommandName() const override { return "ZReplEvalInner"; }
+    virtual const KeyMap* GetKeyMappings(ZepMode&) const override { return &m_keymap; }
+private:
+    IZepReplProvider* m_pProvider = nullptr;
+    KeyMap m_keymap;
+};
+
+
 
 } // namespace Zep

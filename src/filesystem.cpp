@@ -1,4 +1,5 @@
 #include "zep/filesystem.h"
+#include "zep/editor.h" // FOR ZEP_UNUSED
 
 #include <fstream>
 
@@ -9,20 +10,26 @@
 
 #if defined(ZEP_FEATURE_CPP_FILE_SYSTEM)
 
-// Unix/Clang is behind
-#ifdef __unix__
-#include <experimental/filesystem>
-namespace cpp_fs = std::experimental::filesystem::v1;
-#else
 #include <filesystem>
 namespace cpp_fs = std::filesystem;
-#endif
 
 namespace Zep
 {
-ZepFileSystemCPP::ZepFileSystemCPP()
+ZepFileSystemCPP::ZepFileSystemCPP(const ZepPath& configPath)
 {
+    // Use the config path
+    m_configPath = configPath;
+
     m_workingDirectory = ZepPath(cpp_fs::current_path().string());
+
+    // Didn't find the config path, try the working directory
+    if (!Exists(m_configPath))
+    {
+        m_configPath = m_workingDirectory;
+    }
+
+    ZLOG(INFO, "Config Dir: " << m_configPath.c_str());
+    ZLOG(INFO, "Working Dir: " << m_workingDirectory.c_str());
 }
 
 ZepFileSystemCPP::~ZepFileSystemCPP()
@@ -31,6 +38,12 @@ ZepFileSystemCPP::~ZepFileSystemCPP()
 
 void ZepFileSystemCPP::SetWorkingDirectory(const ZepPath& path)
 {
+    if (!IsDirectory(path))
+    {
+        return;
+    }
+    // Set the file system's current working directory too.
+    cpp_fs::current_path(path.string());
     m_workingDirectory = path;
 }
 
@@ -38,7 +51,12 @@ const ZepPath& ZepFileSystemCPP::GetWorkingDirectory() const
 {
     return m_workingDirectory;
 }
-    
+
+ZepPath ZepFileSystemCPP::GetConfigPath() const
+{
+    return m_configPath;
+}
+
 bool ZepFileSystemCPP::MakeDirectories(const ZepPath& path)
 {
     return cpp_fs::create_directories(path.c_str());
@@ -46,6 +64,10 @@ bool ZepFileSystemCPP::MakeDirectories(const ZepPath& path)
 
 bool ZepFileSystemCPP::IsDirectory(const ZepPath& path) const
 {
+    if (!Exists(path))
+    {
+        return false;
+    }
     return cpp_fs::is_directory(path.string());
 }
 
@@ -74,7 +96,7 @@ std::string ZepFileSystemCPP::Read(const ZepPath& fileName)
     }
     else
     {
-        LOG(typelog::ERROR) << "File Not Found: " << fileName.string();
+        ZLOG(ERROR, "File Not Found: " << fileName.string());
     }
     return std::string();
 }
@@ -119,7 +141,8 @@ bool ZepFileSystemCPP::Exists(const ZepPath& path) const
     }
     catch (cpp_fs::filesystem_error& err)
     {
-        LOG(typelog::ERROR) << "Exception: " << err.what();
+        ZEP_UNUSED(err);
+        ZLOG(ERROR, "Exception: " << err.what());
         return false;
     }
 }
@@ -137,7 +160,8 @@ bool ZepFileSystemCPP::Equivalent(const ZepPath& path1, const ZepPath& path2) co
     }
     catch (cpp_fs::filesystem_error& err)
     {
-        LOG(typelog::ERROR) << "Exception: " << err.what();
+        ZEP_UNUSED(err);
+        ZLOG(ERROR, "Exception: " << err.what());
         return path1 == path2;
     }
 }
@@ -146,11 +170,18 @@ ZepPath ZepFileSystemCPP::Canonical(const ZepPath& path) const
 {
     try
     {
+#ifdef __unix__
+        // TODO: Remove when unix doesn't need <experimental/filesystem>
+        // I can't remember why weakly_connical is used....
+        return ZepPath(cpp_fs::canonical(path.string()).string());
+#else
         return ZepPath(cpp_fs::weakly_canonical(path.string()).string());
+#endif
     }
     catch (cpp_fs::filesystem_error& err)
     {
-        LOG(typelog::ERROR) << "Exception: " << err.what();
+        ZEP_UNUSED(err);
+        ZLOG(ERROR, "Exception: " << err.what());
         return path;
     }
 }
@@ -165,6 +196,11 @@ ZepPath ZepFileSystemCPP::GetSearchRoot(const ZepPath& start, bool& foundGit) co
             if (!IsDirectory(testPath))
             {
                 testPath = testPath.parent_path();
+            }
+
+            if (!(m_flags & ZepFileSystemFlags::SearchGitRoot))
+            {
+                return testPath;
             }
 
             while (!testPath.empty() && IsDirectory(testPath))
@@ -195,11 +231,21 @@ ZepPath ZepFileSystemCPP::GetSearchRoot(const ZepPath& start, bool& foundGit) co
 
                 testPath = testPath.parent_path();
             }
+
+            // Didn't find a sensible search root, so start at the parent folder of the start path if it is a file
+            if (!IsDirectory(startPath))
+            {
+                if (IsDirectory(startPath.parent_path()))
+                {
+                    return startPath.parent_path();
+                }
+            }
         }
         return startPath;
     };
 
     ZepPath workingDir = GetWorkingDirectory();
+
     auto startPath = findStartPath(start);
     if (startPath.empty())
     {
@@ -217,6 +263,12 @@ ZepPath ZepFileSystemCPP::GetSearchRoot(const ZepPath& start, bool& foundGit) co
     }
     return startPath;
 }
+
+void ZepFileSystemCPP::SetFlags(uint32_t flags)
+{
+    m_flags = flags;
+}
+
 } // namespace Zep
 
 #endif // CPP_FILESYSTEM

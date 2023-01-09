@@ -11,6 +11,11 @@
 namespace Zep
 {
 
+enum ZepFileSystemFlags
+{
+    SearchGitRoot = (1 << 0)
+};
+
 // Zep's view of the outside world in terms of files
 // Below there is a version of this that will work on most platforms using std's <filesystem> for file operations
 // If you want to expose your app's view of the world, you need to implement this minimal set of functions
@@ -21,10 +26,15 @@ public:
     virtual std::string Read(const ZepPath& filePath) = 0;
     virtual bool Write(const ZepPath& filePath, const void* pData, size_t size) = 0;
 
+    // This is the application config path, where the executable configuration files live
+    // (and most likely the .exe too).
+    virtual ZepPath GetConfigPath() const = 0;
+
     // The rootpath is either the git working directory or the app current working directory
     virtual ZepPath GetSearchRoot(const ZepPath& start, bool& foundGit) const = 0;
 
-    // The working directory is set at start of day to the app's working parameter directory
+    // The working directory is typically the root of the current project that is being edited;
+    // i.e. it is set to the path of the first thing that is passed to zep, or is the zep startup folder
     virtual const ZepPath& GetWorkingDirectory() const = 0;
     virtual void SetWorkingDirectory(const ZepPath& path) = 0;
     virtual bool MakeDirectories(const ZepPath& path) = 0;
@@ -39,6 +49,7 @@ public:
     // Equivalent means 'the same file'
     virtual bool Equivalent(const ZepPath& path1, const ZepPath& path2) const = 0;
     virtual ZepPath Canonical(const ZepPath& path) const = 0;
+    virtual void SetFlags(uint32_t flags) = 0;
 };
 
 // CPP File system - part of the standard C++ libraries
@@ -50,23 +61,27 @@ public:
 class ZepFileSystemCPP : public IZepFileSystem
 {
 public:
+    ZepFileSystemCPP(const ZepPath& configPath);
     ~ZepFileSystemCPP();
-    ZepFileSystemCPP();
     virtual std::string Read(const ZepPath& filePath) override;
     virtual bool Write(const ZepPath& filePath, const void* pData, size_t size) override;
     virtual void ScanDirectory(const ZepPath& path, std::function<bool(const ZepPath& path, bool& dont_recurse)> fnScan) const override;
     virtual void SetWorkingDirectory(const ZepPath& path) override;
     virtual bool MakeDirectories(const ZepPath& path) override;
     virtual const ZepPath& GetWorkingDirectory() const override;
+    virtual ZepPath GetConfigPath() const override;
     virtual ZepPath GetSearchRoot(const ZepPath& start, bool& foundGit) const override;
     virtual bool IsDirectory(const ZepPath& path) const override;
     virtual bool IsReadOnly(const ZepPath& path) const override;
     virtual bool Exists(const ZepPath& path) const override;
     virtual bool Equivalent(const ZepPath& path1, const ZepPath& path2) const override;
     virtual ZepPath Canonical(const ZepPath& path) const override;
+    virtual void SetFlags(uint32_t flags) override;
 
 private:
     ZepPath m_workingDirectory;
+    ZepPath m_configPath;
+    uint32_t m_flags = ZepFileSystemFlags::SearchGitRoot;
 };
 #endif // CPP File system
 

@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "buffer.h"
-#include "zep/mcommon/utf8/unchecked.h"
 
 namespace Zep
 {
@@ -18,25 +17,30 @@ struct Region;
 
 struct LineCharInfo
 {
+    NVec2f pos;
     NVec2f size;
-    ByteIndex byteIndex = 0;
+    GlyphIterator iterator;
 };
+
+class ZepFont;
 // Line information, calculated during display update.
 // A collection of spans that show split lines on the display
 struct SpanInfo
 {
-    BufferByteRange lineByteRange;                 // Begin/end range of the text buffer for this line, as always end is one beyond the end.
+    ByteRange lineByteRange;                       // Begin/end range of the text buffer for this line, as always end is one beyond the end.
     std::vector<LineCharInfo> lineCodePoints;      // Codepoints
     long bufferLineNumber = 0;                     // Line in the original buffer, not the screen line
     float yOffsetPx = 0.0f;                        // Position in the buffer in pixels, if the screen was as big as the buffer.
-    NVec2f textSizePx = NVec2f(0.0f);              // Pixel size of the text 
+    NVec2f lineTextSizePx = NVec2f(0.0f);          // Pixel size of the text 
     int spanLineIndex = 0;                         // The index of this line in spans; might be more than buffer index
     NVec2f padding = NVec2f(1.0f, 1.0f);           // Padding above and below the line
     bool isSplitContinuation = false;
+    NVec2f lineWidgetHeights;
+    ZepFont* pFont = nullptr;
 
     float FullLineHeightPx() const
     {
-        return padding.x + padding.y + textSizePx.y;
+        return padding.x + padding.y + lineTextSizePx.y;
     }
 
     // The byte length, not code point length
@@ -46,9 +50,9 @@ struct SpanInfo
         return lineByteRange.second - lineByteRange.first;
     }
 
-    bool BufferCursorInside(ByteIndex offset) const
+    bool BufferCursorInside(GlyphIterator offset) const
     {
-        return offset >= lineByteRange.first && offset < lineByteRange.second;
+        return offset.Index() >= lineByteRange.first && offset.Index() < lineByteRange.second;
     }
 };
 
@@ -68,12 +72,6 @@ enum class CursorType
     Insert,
     Visual,
     LineMarker
-};
-
-enum class DisplayMode
-{
-    Normal,
-    Vim
 };
 
 namespace WindowFlags
@@ -109,7 +107,7 @@ struct Airline
 // Clients should return the marker information if appropriate
 struct ToolTipMessage : public ZepMessage
 {
-    ToolTipMessage(ZepBuffer* pBuff, const NVec2f& pos, const ByteIndex& loc = ByteIndex{-1})
+    ToolTipMessage(ZepBuffer* pBuff, const NVec2f& pos, const GlyphIterator& loc = GlyphIterator())
         : ZepMessage(Msg::ToolTip, pos)
         , pBuffer(pBuff)
         , location(loc)
@@ -117,7 +115,7 @@ struct ToolTipMessage : public ZepMessage
     }
 
     ZepBuffer* pBuffer;
-    ByteIndex location;
+    GlyphIterator location;
     std::shared_ptr<RangeMarker> spMarker;
 };
 
@@ -138,8 +136,8 @@ public:
     virtual void Display();
 
     // Cursor
-    virtual ByteIndex GetBufferCursor();
-    virtual void SetBufferCursor(ByteIndex location);
+    virtual GlyphIterator GetBufferCursor();
+    virtual void SetBufferCursor(GlyphIterator location);
     virtual void MoveCursorY(int yDistance, LineLocation clampLocation = LineLocation::LineLastNonCR);
     virtual NVec2i BufferToDisplay();
 
@@ -155,21 +153,23 @@ public:
     virtual void SetBuffer(ZepBuffer* pBuffer);
 
     ZepTabWindow& GetTabWindow() const;
-
     NVec4f FilterActiveColor(const NVec4f& col, float atten = 1.0f);
-private:
 
+    void DirtyLayout();
+
+private:
     void UpdateLayout(bool force = false);
+    void UpdateMarkers();
     void UpdateAirline();
     void UpdateScrollers();
     void UpdateLineSpans();
     void EnsureCursorVisible();
     void UpdateVisibleLineRange();
 
-    NVec2i BufferToDisplay(const ByteIndex& location);
+    NVec2i BufferToDisplay(const GlyphIterator& location);
 
     void ScrollToCursor();
-    bool IsInsideTextRegion(NVec2i pos) const;
+    bool IsInsideVisibleText(NVec2i pos) const;
 
     enum class SpecialChar
     {
@@ -178,7 +178,7 @@ private:
         Tab,
         Space
     };
-    void GetCharPointer(ByteIndex loc, const uint8_t*& pBegin, const uint8_t*& pEnd, SpecialChar& specialChar);
+    void GetCharPointer(GlyphIterator loc, const uint8_t*& pBegin, const uint8_t*& pEnd, SpecialChar& specialChar);
     const SpanInfo& GetCursorLineInfo(long y);
 
     float ToWindowY(float pos) const;
@@ -187,8 +187,10 @@ private:
     // Display
     void DisplayToolTip(const NVec2f& pos, const RangeMarker& marker) const;
     bool DisplayLine(SpanInfo& lineInfo, int displayPass);
+    void DisplayLineBackground(SpanInfo& lineInfo, ZepSyntax* pSyntax);
     void DisplayScrollers();
     void DisplayGridMarkers();
+    void DisplayLineNumbers();
 
     void DisableToolTipTillMove();
 
@@ -197,9 +199,9 @@ private:
 
     void PlaceToolTip(const NVec2f& pos, ToolTipPos location, uint32_t lineGap, const std::shared_ptr<RangeMarker> spMarker);
 
-    void DrawLineWidgets(SpanInfo& lineInfo);
+    void DrawAboveLineWidgets(SpanInfo& lineInfo);
 
-    float GetLineTopPadding(long line);
+    NVec2f ArrangeLineMarkers(tRangeMarkers& markers);
     
     bool IsActiveWindow() const;
 
@@ -236,11 +238,12 @@ private:
     uint32_t m_windowFlags = WindowFlags::ShowWhiteSpace | WindowFlags::ShowIndicators | WindowFlags::ShowLineNumbers | WindowFlags::WrapText;
 
     // Cursor
-    ByteIndex m_bufferCursor = 0;                   // Location in buffer coordinates.  Each window has a different buffer cursor
+    GlyphIterator m_bufferCursor;                   // Location in buffer coordinates.  Each window has a different buffer cursor
     long m_lastCursorColumn = 0;                    // The last cursor column (could be removed and recalculated)
+    NVec2f m_mousePos;                              // Current mouse location
+    GlyphIterator m_mouseIterator;                  // Current iterator for the mouse cursor
 
     // Visual stuff
-    DisplayMode m_displayMode = DisplayMode::Vim;
     std::vector<std::string> m_statusLines; // Status information, shown under the buffer
 
     // Setup of displayed lines
@@ -249,13 +252,13 @@ private:
     NVec2f m_textSizePx;                    // The calculated size of the buffer text, containing just the text
     NVec2i m_visibleLineIndices = {0, 0};   // Index of the line spans that are visible 
     long m_maxDisplayLines = 0;
-    float m_defaultLineSize = 0;
+    int m_defaultLineSize = 0;
     float m_xPad = 0.0f;
 
     // Tooltips
     timer m_toolTipTimer;                // Timer for when the tip is shown
     NVec2f m_mouseHoverPos;              // Current location for the tip
-    ByteIndex m_mouseBufferLocation;     // The character in the buffer the tip pos is over, or -1
+    GlyphIterator m_mouseBufferLocation;     // The character in the buffer the tip pos is over, or -1
     NVec2f m_lastTipQueryPos;            // last query location for the tip
     bool m_tipDisabledTillMove = false;  // Certain operations will stop the tip until the mouse is moved
     std::map<NVec2f, std::shared_ptr<RangeMarker>> m_toolTips;  // All tooltips for a given position, currently only 1 at a time

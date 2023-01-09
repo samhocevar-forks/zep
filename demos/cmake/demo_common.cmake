@@ -1,3 +1,5 @@
+# If building Rezonality, the mutils project will be in the vcpkg
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${CMAKE_CURRENT_LIST_DIR}/../../vcpkg/packages/mutils_${VCPKG_TARGET_TRIPLET}/lib/cmake/mutils)
 find_package(SDL2 REQUIRED)
 find_package(MUtils REQUIRED)
 
@@ -12,7 +14,8 @@ if (NOT ICON_NAME)
 endif()
 
 set(RESOURCE_DEPLOY_FILES 
-    ${MUTILS_INCLUDE_DIR}/chibi/init-7.scm)
+    ${MUTILS_INCLUDE_DIR}/chibi/init-7.scm
+    ${ZEP_ROOT}/zep.cfg)
 
 if (APPLE)
     set(ICON_FILE ${RESOURCE_FOLDER}/${ICON_NAME}.icns)
@@ -22,9 +25,9 @@ endif()
 
 if (NOT IS_QT)
     set(RESOURCE_DEPLOY_FILES ${RESOURCE_DEPLOY_FILES}
-        ${MUTILS_INCLUDE_DIR}/imgui/misc/fonts/Cousine-Regular.ttf
-        ${MUTILS_INCLUDE_DIR}/imgui/misc/fonts/DroidSans.ttf
-        ${MUTILS_INCLUDE_DIR}/imgui/misc/fonts/Roboto-Medium.ttf)
+        ${DEMO_ROOT}/demo_imgui/res/Cousine-Regular.ttf
+        ${DEMO_ROOT}/demo_imgui/res/DroidSans.ttf
+        ${DEMO_ROOT}/demo_imgui/res/Roboto-Medium.ttf)
 endif()
 
 if (WIN32)

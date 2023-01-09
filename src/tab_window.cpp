@@ -130,9 +130,6 @@ void ZepTabWindow::SetActiveWindow(ZepWindow* pBuffer)
 // case to deal with that.
 ZepWindow* ZepTabWindow::AddWindow(ZepBuffer* pBuffer, ZepWindow* pParent, RegionLayoutType layoutType)
 {
-    /*LOG(INFO) << "AddWindow, Regions: ";
-    LOG(INFO) << "\n"
-              << *m_spRootRegion;*/
     // If we are replacing a default/unmodified start buffer, then this new window will replace it
     // This makes for nice behavior where adding a top-level window to the tab will nuke the default buffer
     if (m_windows.size() == 1 && pParent == nullptr)
@@ -153,7 +150,7 @@ ZepWindow* ZepTabWindow::AddWindow(ZepBuffer* pBuffer, ZepWindow* pParent, Regio
     // This new window is going to introduce a new region
     auto r = std::make_shared<Region>();
     r->flags = RegionFlags::Expanding;
-    r->name = pBuffer->GetName();
+    r->debugName = pBuffer->GetName();
 
     SetActiveWindow(pWin);
 
@@ -169,7 +166,7 @@ ZepWindow* ZepTabWindow::AddWindow(ZepBuffer* pBuffer, ZepWindow* pParent, Regio
             r1->flags = RegionFlags::Expanding;
             r1->layoutType = layoutType;
             r1->children.push_back(m_spRootRegion);
-            r1->name = "Parented Root";
+            r1->debugName = "Parented Root";
             m_spRootRegion->pParent = r1.get();
             m_spRootRegion = r1;
             r1->children.push_back(r);
@@ -230,7 +227,7 @@ ZepWindow* ZepTabWindow::AddWindow(ZepBuffer* pBuffer, ZepWindow* pParent, Regio
 
             // Make a new region and put the existing region in it
             auto r1 = std::make_shared<Region>();
-            r1->name = "New Sub Region";
+            r1->debugName = "New Sub Region";
             r1->flags = RegionFlags::Expanding;
             pSplitRegion->children.push_back(r1);
             r1->pParent = pSplitRegion.get();
@@ -382,10 +379,6 @@ void ZepTabWindow::RemoveWindow(ZepWindow* pWindow)
         SetDisplayRegion(m_lastRegionRect, true);
         assert(!m_spRootRegion->children.empty());
     }
-
-    //LOG(INFO) << "CloseWindow, Regions: ";
-    //LOG(INFO) << "\n"
-    //         << *m_spRootRegion;
 }
 
 void ZepTabWindow::Notify(std::shared_ptr<ZepMessage> pMsg)
@@ -434,5 +427,27 @@ void ZepTabWindow::Display()
         w->Display();
     }
 }
+
+std::string ZepTabWindow::GetName() const
+{
+    std::string name;
+
+    // Show active buffer in tab as tab name
+    if (GetActiveWindow())
+    {
+        auto& buffer = GetActiveWindow()->GetBuffer();
+        name = buffer.GetName();
+        if (GetEditor().GetConfig().shortTabNames)
+        {
+            auto pos = name.find_last_of('.');
+            if (pos != std::string::npos)
+            {
+                name = name.substr(0, pos);
+            }
+        }
+    }
+    return name;
+}
+
 
 } // namespace Zep

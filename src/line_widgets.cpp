@@ -7,7 +7,7 @@ namespace Zep
 NVec2f FloatSlider::GetSize() const
 {
     // Make the slider as high as the font, but return non-dpi scale
-    return NVec2f((60.0f * m_dimension) + (m_sliderGap * (m_dimension - 1)), m_editor.GetDisplay().GetFontHeightPixels() / m_editor.GetPixelScale().y);
+    return NVec2f((60.0f * m_dimension) + (m_sliderGap * (m_dimension - 1)), m_editor.GetDisplay().GetFont(ZepTextType::Text).GetPixelHeight() / m_editor.GetDisplay().GetPixelScale().y);
 }
 
 void FloatSlider::MouseDown(const NVec2f& pos, ZepMouseButton button)
@@ -27,6 +27,14 @@ void FloatSlider::MouseMove(const NVec2f& pos)
     ZEP_UNUSED(pos);
 }
 
+void FloatSlider::DrawInline(const ZepBuffer& buffer, const NRectf& location)
+{
+    // Nothing inline
+    ZEP_UNUSED(buffer);
+    ZEP_UNUSED(location);
+    return;
+}
+
 void FloatSlider::Draw(const ZepBuffer& buffer, const NVec2f& loc)
 {
     auto& display = m_editor.GetDisplay();
@@ -35,7 +43,7 @@ void FloatSlider::Draw(const ZepBuffer& buffer, const NVec2f& loc)
     {
         // Convert to low DPI, then double up on submit
         // We should do it this way more.
-        auto location = loc / m_editor.GetPixelScale().x;
+        auto location = loc / m_editor.GetDisplay().GetPixelScale().x;
         location = NVec2f(location.x + (slider * (60.0f + m_sliderGap)), location.y);
 
         NVec2f size = GetSize();
@@ -71,6 +79,53 @@ void FloatSlider::Set(const NVec4f& value)
 const NVec4f& FloatSlider::Get() const
 {
     return m_value;
+}
+
+NVec2f ColorPicker::GetSize() const
+{
+    return NVec2f(0.0f, 0.0f);
+}
+
+void ColorPicker::MouseDown(const NVec2f& pos, ZepMouseButton button)
+{
+    ZEP_UNUSED(pos);
+    ZEP_UNUSED(button);
+}
+
+void ColorPicker::MouseUp(const NVec2f& pos, ZepMouseButton button)
+{
+    ZEP_UNUSED(pos);
+    ZEP_UNUSED(button);
+}
+
+void ColorPicker::MouseMove(const NVec2f& pos)
+{
+    ZEP_UNUSED(pos);
+}
+
+void ColorPicker::Draw(const ZepBuffer& buffer, const NVec2f& location)
+{
+    ZEP_UNUSED(buffer);
+    ZEP_UNUSED(location);
+}
+
+void ColorPicker::DrawInline(const ZepBuffer& buffer, const NRectf& location)
+{
+    ZEP_UNUSED(buffer);
+    ZEP_UNUSED(location);
+
+    auto& display = m_editor.GetDisplay();
+    display.DrawRectFilled(location);
+}
+
+void ColorPicker::Set(const NVec4f& value)
+{
+    m_color = value;
+}
+
+const NVec4f& ColorPicker::Get() const
+{
+    return m_color;
 }
 
 } // namespace Zep

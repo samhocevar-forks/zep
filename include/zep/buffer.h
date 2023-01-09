@@ -4,15 +4,15 @@
 #include <set>
 
 #include "zep/mcommon/file/path.h"
-#include "zep/mcommon/utf8/unchecked.h"
-#include "zep/mcommon/string/stringutils.h"
 #include "zep/mcommon/logger.h"
+#include "zep/mcommon/signals.h"
+#include "zep/mcommon/string/stringutils.h"
 
-#include "gap_buffer.h"
+#include "zep/glyph_iterator.h"
 
-#include "editor.h"
-#include "line_widgets.h"
-#include "theme.h"
+#include "zep/editor.h"
+#include "zep/line_widgets.h"
+#include "zep/range_markers.h"
 
 namespace Zep
 {
@@ -22,7 +22,7 @@ class ZepTheme;
 class ZepMode;
 enum class ThemeColor;
 
-enum class SearchDirection
+enum class Direction
 {
     Forward,
     Backward
@@ -76,104 +76,39 @@ enum class BufferType
     Tree
 };
 
-enum class LineLocation
-{
-    None, // Not any specific location
-    LineFirstGraphChar, // First non blank character
-    LineLastGraphChar, // Last non blank character
-    LineLastNonCR, // Last character before the carriage return
-    LineBegin, // Beginning of line
-    BeyondLineEnd, // The line end of the buffer line (for wrapped lines).
-    LineCRBegin, // The first carriage return character
-};
-
-using ByteIndex = long;
-struct BufferByteRange
-{
-    ByteIndex first;
-    ByteIndex second;
-
-    BufferByteRange(ByteIndex a, ByteIndex b)
-        : first(a)
-        , second(b)
-    {
-    }
-
-    explicit BufferByteRange()
-        : first(0)
-        , second(0)
-    {
-    }
-
-    bool ContainsLocation(ByteIndex loc) const
-    {
-        return loc >= first && loc < second;
-    }
-};
-
-namespace RangeMarkerDisplayType
-{
-enum
-{
-    Hidden = 0,
-    Underline = (1 << 0), // Underline the range
-    Background = (1 << 1), // Add a background to the range
-    Tooltip = (1 << 2), // Show a tooltip using the name/description
-    TooltipAtLine = (1 << 3), // Tooltip shown if the user hovers the line
-    CursorTip = (1 << 4), // Tooltip shown if the user cursor is on the Mark
-    CursorTipAtLine = (1 << 5), // Tooltip shown if the user cursor is on the Mark line
-    Indicator = (1 << 6), // Show an indicator on the left side
-    All = Underline | Tooltip | TooltipAtLine | CursorTip | CursorTipAtLine | Indicator | Background
-};
-};
-
-enum class ToolTipPos
-{
-    AboveLine = 0,
-    BelowLine = 1,
-    RightLine = 2,
-    Count = 3
-};
-
-namespace RangeMarkerType
-{
-enum
-{
-    Message = (1 << 0),
-    Search = (1 << 1),
-    All = (Message | Search)
-};
-};
-
-struct RangeMarker
-{
-    BufferByteRange range;
-    ThemeColor textColor = ThemeColor::Text;
-    ThemeColor backgroundColor = ThemeColor::Background;
-    ThemeColor highlightColor = ThemeColor::Background;
-    uint32_t displayType = RangeMarkerDisplayType::All;
-    uint32_t markerType = RangeMarkerType::Message;
-    std::string name;
-    std::string description;
-    ToolTipPos tipPos = ToolTipPos::AboveLine;
-
-    bool ContainsLocation(ByteIndex loc) const
-    {
-        return range.ContainsLocation(loc);
-    }
-    bool IntersectsRange(const BufferByteRange& i) const
-    {
-        return i.first < range.second && i.second > range.first;
-    }
-};
-
-using tRangeMarkers = std::map<ByteIndex, std::set<std::shared_ptr<RangeMarker>>>;
-
-const ByteIndex InvalidByteIndex = -1;
-
 // A really big cursor move; which will likely clamp
-static const ByteIndex MaxCursorMove = ByteIndex(0xFFFFFFF);
+// static const iterator MaxCursorMove = iterator(0xFFFFFFF);
+// const long InvalidByteIndex = -1;
 
+enum class ExpressionType
+{
+    Inner,
+    Outer
+};
+
+// The type of replacement that happens in the buffer
+enum class ReplaceRangeMode
+{
+    Fill,
+    Replace,
+};
+
+struct ChangeRecord
+{
+    std::string strDeleted;
+    std::string strInserted;
+    GlyphIterator itrStart;
+    GlyphIterator itrEnd;
+
+    void Clear()
+    {
+        strDeleted.clear();
+        itrStart.Invalidate();
+        itrEnd.Invalidate();
+    }
+};
+
+using fnKeyNotifier = std::function<bool(uint32_t key, uint32_t modifier)>;
 class ZepBuffer : public ZepComponent
 {
 public:
@@ -190,60 +125,86 @@ public:
     std::string GetFileExtension() const;
     void SetFilePath(const ZepPath& path);
 
-    ByteIndex GetLinePos(ByteIndex bufferLocation, LineLocation lineLocation) const;
-    bool GetLineOffsets(const long line, ByteIndex& charStart, ByteIndex& charEnd) const;
-    ByteIndex Clamp(ByteIndex location) const;
-    ByteIndex ClampToVisibleLine(ByteIndex in) const;
-    long GetBufferColumn(ByteIndex location) const;
-    bool InsideBuffer(ByteIndex location) const;
+    GlyphIterator GetLinePos(GlyphIterator bufferLocation, LineLocation lineLocation) const;
+    bool GetLineOffsets(const long line, ByteRange& range) const;
+    GlyphIterator ClampToVisibleLine(GlyphIterator in) const;
+    long GetBufferColumn(GlyphIterator location) const;
     using fnMatch = std::function<bool(const char)>;
 
-    void Move(ByteIndex& loc, SearchDirection dir) const;
-    bool Valid(ByteIndex locataion) const;
-    bool MotionBegin(ByteIndex& start) const;
-    bool Skip(fnMatch IsToken, ByteIndex& start, SearchDirection dir) const;
-    bool SkipOne(fnMatch IsToken, ByteIndex& start, SearchDirection dir) const;
-    bool SkipNot(fnMatch IsToken, ByteIndex& start, SearchDirection dir) const;
+    bool Move(GlyphIterator& loc, Direction dir) const;
+    void MotionBegin(GlyphIterator& start) const;
+    bool Skip(fnMatch IsToken, GlyphIterator& start, Direction dir) const;
+    bool SkipOne(fnMatch IsToken, GlyphIterator& start, Direction dir) const;
+    bool SkipNot(fnMatch IsToken, GlyphIterator& start, Direction dir) const;
 
-    ByteIndex Find(ByteIndex start, const uint8_t* pBegin, const uint8_t* pEnd) const;
-    ByteIndex FindOnLineMotion(ByteIndex start, const uint8_t* pCh, SearchDirection dir) const;
-    ByteIndex WordMotion(ByteIndex start, uint32_t searchType, SearchDirection dir) const;
-    ByteIndex EndWordMotion(ByteIndex start, uint32_t searchType, SearchDirection dir) const;
-    ByteIndex ChangeWordMotion(ByteIndex start, uint32_t searchType, SearchDirection dir) const;
-    BufferByteRange AWordMotion(ByteIndex start, uint32_t searchType) const;
-    BufferByteRange InnerWordMotion(ByteIndex start, uint32_t searchType) const;
-    BufferByteRange StandardCtrlMotion(ByteIndex cursor, SearchDirection searchDir) const;
+    GlyphIterator Find(GlyphIterator start, const uint8_t* pBegin, const uint8_t* pEnd) const;
+    GlyphIterator FindFirstCharOf(GlyphIterator& start, const std::string& chars, int32_t& foundIndex, Direction dir) const;
+    GlyphIterator FindOnLineMotion(GlyphIterator start, const uint8_t* pCh, Direction dir) const;
+    std::pair<GlyphIterator, GlyphIterator> FindMatchingPair(GlyphIterator start, const uint8_t ch) const;
+    GlyphIterator WordMotion(GlyphIterator start, uint32_t searchType, Direction dir) const;
+    GlyphIterator EndWordMotion(GlyphIterator start, uint32_t searchType, Direction dir) const;
+    GlyphIterator ChangeWordMotion(GlyphIterator start, uint32_t searchType, Direction dir) const;
+    GlyphRange AWordMotion(GlyphIterator start, uint32_t searchType) const;
+    GlyphRange InnerWordMotion(GlyphIterator start, uint32_t searchType) const;
+    GlyphRange StandardCtrlMotion(GlyphIterator cursor, Direction searchDir) const;
 
-    bool Delete(const ByteIndex& startOffset, const ByteIndex& endOffset);
-    bool Insert(const ByteIndex& startOffset, const std::string& str);
-    bool Replace(const ByteIndex& startOffset, const ByteIndex& endOffset, const std::string& str);
+    // Things that change
+    bool Delete(const GlyphIterator& startOffset, const GlyphIterator& endOffset, ChangeRecord& changeRecord);
+    bool Insert(const GlyphIterator& startOffset, const std::string& str, ChangeRecord& changeRecord);
+    bool Replace(const GlyphIterator& startOffset, const GlyphIterator& endOffset, /*note; not ref*/ std::string str, ReplaceRangeMode mode, ChangeRecord& changeRecord);
 
     long GetLineCount() const
     {
         return long(m_lineEnds.size());
     }
-    long GetBufferLine(ByteIndex offset) const;
+    long GetBufferLine(GlyphIterator offset) const;
 
-    ByteIndex EndLocation() const;
+    GlyphIterator End() const;
+    GlyphIterator Begin() const;
 
-    const GapBuffer<uint8_t>& GetText() const
+    const GapBuffer<uint8_t>& GetWorkingBuffer() const
     {
-        return m_gapBuffer;
+        return m_workingBuffer;
     }
-    GapBuffer<uint8_t>& GetMutableText()
+
+    GapBuffer<uint8_t>& GetMutableWorkingBuffer()
     {
-        return m_gapBuffer;
+        return m_workingBuffer;
     }
-    const std::vector<long> GetLineEnds() const
+
+    const std::vector<ByteIndex> GetLineEnds() const
     {
         return m_lineEnds;
+    }
+
+    void SetToneColor(const NVec4f& toneColor)
+    {
+        m_toneColor = toneColor;
+    }
+
+    const NVec4f& GetToneColor() const
+    {
+        return m_toneColor;
+    }
+
+    void SetSyntax(std::shared_ptr<ZepSyntax> syntax)
+    {
+        m_spSyntax = syntax;
     }
 
     void SetSyntaxProvider(SyntaxProvider provider)
     {
         if (provider.syntaxID != m_syntaxProvider.syntaxID)
         {
-            m_spSyntax = provider.factory(this);
+            if (provider.factory)
+            {
+                m_spSyntax = provider.factory(this);
+            }
+            else
+            {
+                m_spSyntax.reset();
+            }
+
             m_syntaxProvider = provider;
         }
     }
@@ -253,10 +214,7 @@ public:
         return m_spSyntax.get();
     }
 
-    const std::string& GetName() const
-    {
-        return m_strName;
-    }
+    const std::string& GetName() const;
 
     std::string GetDisplayName() const;
     virtual void Notify(std::shared_ptr<ZepMessage> message) override;
@@ -264,34 +222,31 @@ public:
     ZepTheme& GetTheme() const;
     void SetTheme(std::shared_ptr<ZepTheme> spTheme);
 
-    void SetSelection(const BufferByteRange& sel);
-    BufferByteRange GetSelection() const;
+    void SetSelection(const GlyphRange& sel);
+    GlyphRange GetInclusiveSelection() const;
     bool HasSelection() const;
     void ClearSelection();
 
     void AddRangeMarker(std::shared_ptr<RangeMarker> spMarker);
+    void ClearRangeMarker(std::shared_ptr<RangeMarker> spMarker);
     void ClearRangeMarkers(const std::set<std::shared_ptr<RangeMarker>>& markers);
     void ClearRangeMarkers(uint32_t types);
     tRangeMarkers GetRangeMarkers(uint32_t types) const;
+    tRangeMarkers GetRangeMarkersOnLine(uint32_t types, long line) const;
     void HideMarkers(uint32_t markerType);
     void ShowMarkers(uint32_t markerType, uint32_t displayType);
 
-    void ForEachMarker(uint32_t types, SearchDirection dir, ByteIndex begin, ByteIndex end, std::function<bool(const std::shared_ptr<RangeMarker>&)> fnCB) const;
-    std::shared_ptr<RangeMarker> FindNextMarker(ByteIndex start, SearchDirection dir, uint32_t markerType);
+    void ForEachMarker(uint32_t types, Direction dir, const GlyphIterator& begin, const GlyphIterator& end, std::function<bool(const std::shared_ptr<RangeMarker>&)> fnCB) const;
+    std::shared_ptr<RangeMarker> FindNextMarker(GlyphIterator start, Direction dir, uint32_t markerType);
 
     void SetBufferType(BufferType type);
     BufferType GetBufferType() const;
 
-    void SetLastEditLocation(ByteIndex loc);
-    ByteIndex GetLastEditLocation() const;
+    void SetLastEditLocation(GlyphIterator loc);
+    GlyphIterator GetLastEditLocation();
 
     ZepMode* GetMode() const;
     void SetMode(std::shared_ptr<ZepMode> spMode);
-
-    using tLineWidgets = std::vector<std::shared_ptr<ILineWidget>>;
-    void AddLineWidget(long line, std::shared_ptr<ILineWidget> spWidget);
-    void ClearLineWidgets(long line);
-    const tLineWidgets* GetLineWidgets(long line) const;
 
     uint64_t GetLastUpdateTime() const
     {
@@ -310,25 +265,36 @@ public:
     void ClearFileFlags(uint32_t flags);
     void ToggleFileFlag(uint32_t flags);
 
+    GlyphRange GetExpression(ExpressionType type, const GlyphIterator location, const std::vector<char>& beginExpression, const std::vector<char>& endExpression) const;
+    std::string GetBufferText(const GlyphIterator& start, const GlyphIterator& end) const;
+
+    void SetPostKeyNotifier(fnKeyNotifier notifier);
+    fnKeyNotifier GetPostKeyNotifier() const;
+
+    void EndFlash() const;
+    void BeginFlash(float seconds, FlashType flashType, const GlyphRange& range);
+
+    uint64_t ToHandle() const;
+    static ZepBuffer* FromHandle(ZepEditor& editor, uint64_t handle);
+
+    Zep::signal<void(ZepBuffer& buffer, const GlyphIterator&, const std::string&)> sigPreInsert;
+    Zep::signal<void(ZepBuffer& buffer, const GlyphIterator&, const GlyphIterator&)> sigPreDelete;
+
 private:
-    void ClearRangeMarker(std::shared_ptr<RangeMarker> spMarker);
-
     void MarkUpdate();
-
-    void UpdateForInsert(const ByteIndex& startOffset, const ByteIndex& endOffset);
-    void UpdateForDelete(const ByteIndex& startOffset, const ByteIndex& endOffset);
 
 private:
     // Buffer & record of the line end locations
-    GapBuffer<uint8_t> m_gapBuffer;
+    GapBuffer<uint8_t> m_workingBuffer;
+
     std::vector<ByteIndex> m_lineEnds;
 
     // File and modification info
     ZepPath m_filePath;
-    std::string m_strName;
+    mutable std::string m_strName;
     uint32_t m_fileFlags = 0;
     BufferType m_bufferType = BufferType::Normal;
-    ByteIndex m_lastEditLocation = 0;
+    GlyphIterator m_lastEditLocation; // = 0;
     uint64_t m_updateCount = 0;
     uint64_t m_lastUpdateTime = 0;
 
@@ -336,16 +302,15 @@ private:
     std::shared_ptr<ZepSyntax> m_spSyntax;
     std::shared_ptr<ZepTheme> m_spOverrideTheme;
     SyntaxProvider m_syntaxProvider;
-
-    // Widgets
-    std::map<ByteIndex, std::vector<std::shared_ptr<ILineWidget>>> m_lineWidgets;
+    NVec4f m_toneColor = NVec4f(0.0f);
 
     // Selections
-    BufferByteRange m_selection;
+    GlyphRange m_selection;
     tRangeMarkers m_rangeMarkers;
 
     // Modes
     std::shared_ptr<ZepMode> m_spMode;
+    fnKeyNotifier m_postKeyNotifier;
 };
 
 // Notification payload
@@ -362,7 +327,7 @@ enum class BufferMessageType
 
 struct BufferMessage : public ZepMessage
 {
-    BufferMessage(ZepBuffer* pBuff, BufferMessageType messageType, const ByteIndex& startLoc, const ByteIndex& endLoc)
+    BufferMessage(ZepBuffer* pBuff, BufferMessageType messageType, const GlyphIterator& startLoc, const GlyphIterator& endLoc)
         : ZepMessage(Msg::Buffer)
         , pBuffer(pBuff)
         , type(messageType)
@@ -373,169 +338,8 @@ struct BufferMessage : public ZepMessage
 
     ZepBuffer* pBuffer;
     BufferMessageType type;
-    ByteIndex startLocation;
-    ByteIndex endLocation;
-};
-
-class GlyphIterator
-{
-public:
-    using itrGlyph = GapBuffer<uint8_t>::const_iterator;
-
-    GlyphIterator(const ZepBuffer& buffer, ByteIndex offset = 0)
-        : m_buffer(buffer),
-        m_itr(buffer.GetText().begin() + offset)
-    {
-        assert(Valid());
-    }
-
-    GlyphIterator(const GlyphIterator& itr)
-        : m_buffer(itr.m_buffer),
-        m_itr(itr.m_itr)
-    {
-        assert(Valid());
-    }
-
-    itrGlyph Itr() const { return m_itr; }
-
-    bool Valid() const
-    {
-        return true;
-        /*
-        // End iterator is OK
-        if (m_itr == m_buffer.GetText().end())
-        {
-            return true;
-        }
-        return (!utf8_is_trailing(Char()));
-        */
-    }
-
-    itrGlyph Begin() const
-    {
-        return m_buffer.GetText().begin();
-    }
-
-    itrGlyph End() const
-    {
-        return m_buffer.GetText().end();
-    }
-
-    bool operator<(const GlyphIterator& rhs) const
-    {
-        return m_itr < rhs.Itr();
-    }
-
-    bool operator<=(const GlyphIterator& rhs) const
-    {
-        return m_itr <= rhs.Itr();
-    }
-    bool operator>(const GlyphIterator& rhs) const
-    {
-        return m_itr > rhs.Itr();
-    }
-
-    bool operator>=(const GlyphIterator& rhs) const
-    {
-        return m_itr >= rhs.Itr();
-    }
-
-    bool operator==(const GlyphIterator& rhs) const
-    {
-        return m_itr == rhs.Itr();
-    }
-
-    bool operator!=(const GlyphIterator& rhs) const
-    {
-        return m_itr != rhs.Itr();
-    }
-
-    GlyphIterator& operator=(const GlyphIterator& rhs)
-    {
-        m_itr = rhs.Itr();
-        return *this;
-    }
-
-    ByteIndex ToByteIndex() const
-    {
-        return ByteIndex(m_itr - Begin());
-    }
-
-    operator ByteIndex()
-    {
-        return ByteIndex(m_itr - Begin());
-    }
-
-    char Char() const
-    {
-        return (char)*m_itr;
-    }
-
-    GlyphIterator& MoveClamped(long count, LineLocation clamp = LineLocation::LineLastNonCR)
-    {
-        if (count >= 0)
-        {
-            auto lineEnd = GlyphIterator(m_buffer, m_buffer.GetLinePos(ToByteIndex(), clamp));
-            for (long c = 0; c < count; c++)
-            {
-                if (m_itr >= lineEnd.Itr())
-                {
-                    break;
-                }
-                m_itr += utf8_codepoint_length(*m_itr);
-            }
-        }
-        else
-        {
-            auto lineBegin = GlyphIterator(m_buffer, m_buffer.GetLinePos(ToByteIndex(), LineLocation::LineBegin));
-            for (long c = count; c < 0; c++)
-            {
-                while ((m_itr > lineBegin.Itr()) && utf8_is_trailing(*(--m_itr)));
-            }
-        }
-        assert(Valid());
-
-        return *this;
-    }
-
-    GlyphIterator& Move(long count)
-    {
-        if (count >= 0)
-        {
-            for (long c = 0; c < count; c++)
-            {
-                m_itr += utf8_codepoint_length(*m_itr);
-            }
-        }
-        else
-        {
-            auto itrBegin = Begin();
-            for (long c = count; c < 0; c++)
-            {
-                while ((m_itr > itrBegin) && utf8::internal::is_trail(*(--m_itr)));
-            }
-        }
-        assert(Valid());
-        return *this;
-    }
-
-    GlyphIterator Peek(long count)
-    {
-        GlyphIterator copy(m_buffer, ToByteIndex());
-        copy.Move(count);
-        return copy;
-    }
-
-    GlyphIterator PeekClamped(long count, LineLocation clamp = LineLocation::LineLastNonCR)
-    {
-        GlyphIterator copy(m_buffer, ToByteIndex());
-        copy.MoveClamped(count, clamp);
-        return copy;
-    }
-
-private:
-    const ZepBuffer& m_buffer;
-    itrGlyph m_itr;
+    GlyphIterator startLocation;
+    GlyphIterator endLocation;
 };
 
 } // namespace Zep

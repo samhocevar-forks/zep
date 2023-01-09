@@ -187,13 +187,14 @@ struct SyntaxProvider
 
 const float bottomBorder = 2.0f;
 const float textBorder = 2.0f;
+const float tabToneLine = 5.0f;
 const float tabSpacing = 1.0f;
 const float leftBorderChars = 3;
 
-#define DPI_VEC2(value) (value * GetEditor().GetPixelScale())
-#define DPI_Y(value) (GetEditor().GetPixelScale().y * value)
-#define DPI_X(value) (GetEditor().GetPixelScale().x * value)
-#define DPI_RECT(value) (value * GetEditor().GetPixelScale())
+#define DPI_VEC2(value) (value * GetEditor().GetDisplay().GetPixelScale())
+#define DPI_Y(value) (GetEditor().GetDisplay().GetPixelScale().y * value)
+#define DPI_X(value) (GetEditor().GetDisplay().GetPixelScale().x * value)
+#define DPI_RECT(value) (value * GetEditor().GetDisplay().GetPixelScale())
 
 inline float FontHeightPixelsFromPointSize(float pointSize, float pixelScaleY)
 {
@@ -214,12 +215,16 @@ struct EditorConfig
     EditorStyle style = EditorStyle::Normal;
     NVec2f lineMargins = NVec2f(1.0f);
     NVec2f widgetMargins = NVec2f(1.0f);
+    NVec2f inlineWidgetMargins = NVec2f(2.0f);
+    float underlineHeight = 3.0f;
     bool showLineNumbers = true;
     bool shortTabNames = true;
+    bool tabToneColors = false;
     bool showIndicatorRegion = true;
     bool autoHideCommandRegion = true;
     bool cursorLineSolid = false;
     bool showNormalModeKeyStrokes = false;
+    bool searchGitRoot = true;
     float backgroundFadeTime = 60.0f;
     float backgroundFadeWait = 60.0f;
 };
@@ -241,9 +246,9 @@ public:
 struct TabRegionTab : public Region
 {
     NVec4f color;
-    std::string name;
     ZepTabWindow* pTabWindow = nullptr;
 };
+
 
 class ZepEditor
 {
@@ -268,6 +273,7 @@ public:
     ZepExCommand* FindExCommand(const StringId& strName);
     void SetGlobalMode(const std::string& currentMode);
     ZepMode* GetSecondaryMode() const;
+    const ZepPath& GetConfigRoot() const;
 
     std::vector<const KeyMap*> GetGlobalKeyMaps(ZepMode& mode);
 
@@ -289,10 +295,14 @@ public:
     const tBuffers& GetBuffers() const;
     ZepBuffer* GetMRUBuffer() const;
     void SaveBuffer(ZepBuffer& buffer);
+    void SaveBufferAs(ZepBuffer& buffer, ZepPath filePath);
     ZepBuffer* GetFileBuffer(const ZepPath& filePath, uint32_t fileFlags = 0, bool create = true);
     ZepBuffer* GetEmptyBuffer(const std::string& name, uint32_t fileFlags = 0);
     void RemoveBuffer(ZepBuffer* pBuffer);
     std::vector<ZepWindow*> FindBufferWindows(const ZepBuffer* pBuffer) const;
+    ZepBuffer* GetActiveBuffer() const;
+    ZepBuffer* FindFileBuffer(const ZepPath& filePath);
+    ZepWindow* EnsureWindow(ZepBuffer& buffer);
 
     void SetRegister(const std::string& reg, const Register& val);
     void SetRegister(const char reg, const Register& val);
@@ -314,10 +324,12 @@ public:
     void NextTabWindow();
     void PreviousTabWindow();
     void SetCurrentTabWindow(ZepTabWindow* pTabWindow);
+    void SetCurrentWindow(ZepWindow* pWindow);
     ZepTabWindow* GetActiveTabWindow() const;
     ZepTabWindow* AddTabWindow();
     void RemoveTabWindow(ZepTabWindow* pTabWindow);
     const tTabWindows& GetTabWindows() const;
+    ZepWindow* GetActiveWindow() const;
 
     void UpdateTabs();
 
@@ -364,9 +376,6 @@ public:
     bool OnMouseUp(const NVec2f& mousePos, ZepMouseButton button);
     const NVec2f GetMousePos() const;
 
-    void SetPixelScale(const NVec2f& scale);
-    NVec2f GetPixelScale() const;
-
     void SetBufferSyntax(ZepBuffer& buffer) const;
     void SetBufferMode(ZepBuffer& buffer) const;
 
@@ -382,6 +391,8 @@ public:
 
     // Used to inform when a file changes - called from outside zep by the platform specific code, if possible
     virtual void OnFileChanged(const ZepPath& path);
+
+    ZepBuffer* GetBufferFromHandle(uint64_t handle);
 
 private:
     // Call GetBuffer publicly, to stop creation of duplicate buffers refering to the same file
@@ -439,11 +450,10 @@ private:
     float m_tabOffsetX = 0.0f;
 
     NVec2f m_mousePos = NVec2f(0.0f);
-    NVec2f m_pixelScale = NVec2f(1.0f);
-    ZepPath m_rootPath;
 
     // Config
     EditorConfig m_config;
+    ZepPath m_configRoot;
 
     std::unique_ptr<ThreadPool> m_threadPool;
 

@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include <mutils/chibi/chibi.h>
 #include <mutils/time/time_provider.h>
 #define _MATH_DEFINES_DEFINED
@@ -71,7 +70,7 @@ MainWindow::MainWindow()
 
     chibi_init(scheme, qApp->applicationDirPath().toStdString());
 
-    auto* pWidget = new ZepWidget_Qt(this, ZEP_ROOT, DemoFontPtSize);
+    auto* pWidget = new ZepWidget_Qt(this, qApp->applicationDirPath().toStdString(), DemoFontPtSize);
 
     // Register our extensions
     ZepMode_Orca::Register(pWidget->GetEditor());
@@ -158,6 +157,16 @@ MainWindow::~MainWindow()
 std::string MainWindow::ReplParse(const std::string& str)
 {
     auto ret = chibi_repl(scheme, NULL, str);
+    ret = RTrim(ret);
+    return ret;
+}
+
+std::string MainWindow::ReplParse(ZepBuffer& buffer, const GlyphIterator& cursorOffset, ReplParseType type)
+{
+    ZEP_UNUSED(cursorOffset);
+    ZEP_UNUSED(type);
+
+    auto ret = chibi_repl(scheme, NULL, buffer.GetWorkingBuffer().string());
     ret = RTrim(ret);
     return ret;
 }

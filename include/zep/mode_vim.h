@@ -33,11 +33,13 @@ public:
     virtual void Init() override;
     virtual void Begin(ZepWindow* pWindow) override;
     virtual const char* Name() const override { return StaticName(); }
+    virtual EditorMode DefaultMode() const override { return EditorMode::Normal; }
     virtual void PreDisplay(ZepWindow& win) override;
     virtual void SetupKeyMaps();
     virtual void AddOverStrikeMaps();
     virtual void AddCopyMaps();
     virtual void AddPasteMaps();
+    virtual bool UsesRelativeLines() const override { return true; }
 };
 
 } // namespace Zep

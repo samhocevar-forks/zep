@@ -1,11 +1,25 @@
+IF (BUILD_EXTENSIONS)
+
 project(ZepExtensions
     VERSION 0.1.0.0)
 
-#add_compile_options("$<$<CONFIG:DEBUG>:-DTRACY_ENABLE=1>")
-add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-DTRACY_ENABLE=1>")
+# If building Rezonality, the mutils project will be in the vcpkg
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${CMAKE_CURRENT_LIST_DIR}/../../vcpkg/packages/mutils_${VCPKG_TARGET_TRIPLET}/lib/cmake/mutils)
 
 find_package(SDL2 REQUIRED)
+find_package(gsl-lite REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(fmt REQUIRED)
+find_package(gl3w REQUIRED)
+find_package(freetype CONFIG REQUIRED)
+find_package(unofficial-concurrentqueue REQUIRED)
+find_package(tinyfiledialogs REQUIRED)
 find_package(MUtils REQUIRED)
+
+if (WIN32)
+add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-DTRACY_ENABLE=1>")
+add_compile_options("$<$<CONFIG:DEBUG>:-DTRACY_ENABLE=1>")
+endif()
 
 SET(EXTENSION_ROOT ${CMAKE_CURRENT_LIST_DIR})
 
@@ -72,3 +86,5 @@ install(DIRECTORY ${ZEP_ROOT}/extensions/orca
 )
 install(DIRECTORY ${ZEP_ROOT}/extensions/repl
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zep/extensions)
+
+endif()

@@ -2,18 +2,17 @@ language: cpp
 
 before_script:
   # Make mutils first and install it
-  - git clone https://github.com/cmaughan/MUtils
-  - cd MUtils
+  - cd ..
+  - git clone https://github.com/Rezonality/mutils
+  - cd mutils
   - chmod +x prebuild.sh
-  - chmod +x m3rdparty/packages/install.sh
   - sudo ./prebuild.sh
   - mkdir build
   - cd build
   - cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
   - make
   - sudo make install
-  - cd ..
-  - cd ..
+  - cd $TRAVIS_BUILD_DIR
   - mkdir build
   - cd build
 
@@ -28,7 +27,7 @@ matrix:
       script:
         - cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
         - make
-        - make tests
+        - ./tests/unittests
     - os: linux
       dist: bionic
       addons:
@@ -47,7 +46,7 @@ matrix:
       script:
         - cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
         - make
-        - make tests
+        - ./tests/unittests
 
       # Coverage
     - os: linux
@@ -69,7 +68,7 @@ matrix:
         - pip install --upgrade --user git+git://github.com/eddyxu/cpp-coveralls.git
         - cmake -DENABLE_COVERAGE=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make tests
+        - ./tests/unittests
         - cd ..
         - |
           coveralls --build-root build --gcov-options '\-lp' \
@@ -98,7 +97,7 @@ matrix:
       script:
         - cmake -DENABLE_ASAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make tests
+        - ./tests/unittests
 
       # Google Undefined Sanitizer
     - os: linux
@@ -119,7 +118,7 @@ matrix:
       script:
         - cmake -DENABLE_USAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make tests
+        - ./tests/unittests
 
       # Google Thread Sanitizer
     - os: linux
@@ -140,4 +139,5 @@ matrix:
       script:
         - cmake -DENABLE_TSAN=ON -DCMAKE_CXX_COMPILER="g++" ..
         - make
-        - make tests
+        - ./tests/unittests
+

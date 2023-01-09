@@ -29,7 +29,7 @@ struct ZepConsole : Zep::IZepComponent
     }
 
     ZepConsole(Zep::ZepPath& p)
-        : zepEditor(p)
+        : zepEditor(p, Zep::NVec2f(1.0f))
     {
         zepEditor.RegisterCallback(this);
         auto pBuffer = zepEditor.GetEmptyBuffer("Log");
@@ -48,8 +48,9 @@ struct ZepConsole : Zep::IZepComponent
 
         auto pBuffer = zepEditor.GetMRUBuffer();
 
-        pBuffer->Insert(pBuffer->EndLocation(), buf);
-        pBuffer->Insert(pBuffer->EndLocation(), "\n");
+        Zep::ChangeRecord changeRecord;
+        pBuffer->Insert(pBuffer->End(), buf, changeRecord);
+        pBuffer->Insert(pBuffer->End(), "\n", changeRecord);
      
         pendingScroll = true;
     }
@@ -78,7 +79,7 @@ struct ZepConsole : Zep::IZepComponent
 
         if (pendingScroll)
         {
-            zepEditor.GetActiveTabWindow()->GetActiveWindow()->MoveCursorY(Zep::MaxCursorMove);
+            zepEditor.GetActiveTabWindow()->GetActiveWindow()->MoveCursorY(0xFFFFFFFF);
             pendingScroll = false;
         }
 
@@ -86,8 +87,7 @@ struct ZepConsole : Zep::IZepComponent
         {
             // TODO: This looks like a hack: investigate why it is needed for the drop down console.
             // I think the intention here is to ensure the mode is reset while it is dropping down. I don't recall.
-            auto *pWindow = zepEditor.GetActiveTabWindow()->GetActiveWindow();
-            pWindow->GetBuffer().GetMode()->Begin(pWindow);
+            zepEditor.GetActiveTabWindow()->GetActiveWindow()->GetBuffer().GetMode()->Begin(zepEditor.GetActiveTabWindow()->GetActiveWindow());
         }
 
         ImGui::End();

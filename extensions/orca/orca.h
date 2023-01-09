@@ -27,6 +27,8 @@ extern "C" {
 
 #include <zep/syntax.h>
 
+#include <zep/mcommon/signals.h>
+
 namespace Zep
 {
 
@@ -109,7 +111,8 @@ public:
     Orca();
     virtual ~Orca();
 
-    virtual void AddTickEvent(MUtils::TimeLineEvent* ev) override;
+    // ITimeConsumer
+    virtual void Tick() override;
 
     void Init(ZepEditor& editor);
     void WriteToBuffer(ZepBuffer* pBuffer, ZepWindow& window);
@@ -119,14 +122,32 @@ public:
     void Step();
     void Quit();
 
-    NVec2i GetSize() const { return m_size; }
-    uint32_t GetFrame() const { return m_frame.load(); }
-    void SetFrame(uint32_t frame) { return m_frame.store(frame); }
-    bool IsZeroQuantum() const { return m_zeroQuantum; }
+    NVec2i GetSize() const
+    {
+        return m_size;
+    }
+    uint32_t GetFrame() const
+    {
+        return m_frame.load();
+    }
+    void SetFrame(uint32_t frame)
+    {
+        return m_frame.store(frame);
+    }
+    bool IsZeroQuantum() const
+    {
+        return m_zeroQuantum;
+    }
 
-    bool IsEnabled() const { return m_enable.load(); }
+    bool IsEnabled() const
+    {
+        return m_enable.load();
+    }
 
     void RunThread(ZepEditor& editor);
+
+    // Signals
+    signal<void(std::chrono::milliseconds duration, float velocity, uint32_t midiNote)> sigPlayNote;
 
 private:
     long FieldIndex(long x, long y);
@@ -134,7 +155,7 @@ private:
     long StateIndex(long x, long y);
 
     void WriteState(long x, long y, long xOffset, long yOffset, uint32_t state);
-    void WriteState(long x, long y,uint32_t state);
+    void WriteState(long x, long y, uint32_t state);
     uint32_t ReadState(long x, long y, long xOffset = 0, long yOffset = 0);
 
     Glyph ReadField(long x, long y, Glyph failVal = 0);
@@ -146,12 +167,12 @@ private:
 private:
     ZepEditor* m_pEditor = nullptr;
     NVec2i m_size;
-    
+
     std::mutex m_mutex;
     std::atomic_bool m_enable = false;
     std::atomic_bool m_updated = true;
     std::atomic_bool m_step = false;
-    
+
     Field m_field;
     std::vector<uint8_t> m_lastField;
     std::vector<SyntaxResult> m_syntax;
@@ -163,7 +184,6 @@ private:
 
     double m_lastBeat = 0.0;
     bool m_zeroQuantum = true;
-    MUtils::MemoryPool<MUtils::NoteEvent> m_eventPool;
 };
 
 } // namespace Zep
