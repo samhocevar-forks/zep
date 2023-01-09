@@ -62,20 +62,20 @@ public:
 
         uint32_t mod = 0;
 
-        static std::map<int, int> MapUSBKeys =
+        static std::map<ImGuiKey, int> MapUSBKeys =
         {
-            { ZEP_KEY_F1, ExtKeys::F1},
-            { ZEP_KEY_F2, ExtKeys::F2},
-            { ZEP_KEY_F3, ExtKeys::F3},
-            { ZEP_KEY_F4, ExtKeys::F4},
-            { ZEP_KEY_F5, ExtKeys::F5},
-            { ZEP_KEY_F6, ExtKeys::F6},
-            { ZEP_KEY_F7, ExtKeys::F7},
-            { ZEP_KEY_F8, ExtKeys::F8},
-            { ZEP_KEY_F9, ExtKeys::F9},
-            { ZEP_KEY_F10, ExtKeys::F10},
-            { ZEP_KEY_F11, ExtKeys::F11},
-            { ZEP_KEY_F12, ExtKeys::F12}
+            { ImGuiKey_F1, ExtKeys::F1},
+            { ImGuiKey_F2, ExtKeys::F2},
+            { ImGuiKey_F3, ExtKeys::F3},
+            { ImGuiKey_F4, ExtKeys::F4},
+            { ImGuiKey_F5, ExtKeys::F5},
+            { ImGuiKey_F6, ExtKeys::F6},
+            { ImGuiKey_F7, ExtKeys::F7},
+            { ImGuiKey_F8, ExtKeys::F8},
+            { ImGuiKey_F9, ExtKeys::F9},
+            { ImGuiKey_F10, ExtKeys::F10},
+            { ImGuiKey_F11, ExtKeys::F11},
+            { ImGuiKey_F12, ExtKeys::F12}
         };
         if (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)
         {
@@ -141,67 +141,67 @@ public:
                 }
             }
 
-            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
+            if (ImGui::IsKeyPressed(ImGuiKey_Tab))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::TAB, mod);
                 return;
             }
-            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape)))
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::ESCAPE, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_Enter))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::RETURN, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_Delete))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::DEL, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_Home))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::HOME, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_End))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::END, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_Backspace))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::BACKSPACE, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::RIGHT, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::LEFT, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::UP, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::DOWN, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageDown)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::PAGEDOWN, mod);
                 return;
             }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageUp)))
+            else if (ImGui::IsKeyPressed(ImGuiKey_PageUp))
             {
                 pBuffer->GetMode()->AddKeyPress(ExtKeys::PAGEUP, mod);
                 return;
@@ -240,19 +240,19 @@ public:
                     }
                 }
 #else
-                if (ImGui::IsKeyPressed('1'))
+                if (ImGui::IsKeyPressed(ImGuiKey_1))
                 {
                     SetGlobalMode(ZepMode_Standard::StaticName());
                     handled = true;
                 }
-                else if (ImGui::IsKeyPressed('2'))
+                else if (ImGui::IsKeyPressed(ImGuiKey_2))
                 {
                     SetGlobalMode(ZepMode_Vim::StaticName());
                     handled = true;
                 }
                 else
                 {
-                    for (int ch = 'A'; ch <= 'Z'; ch++)
+                    for (auto ch = ImGuiKey_A; ch <= ImGuiKey_Z; ch = ImGuiKey(ch + 1))
                     {
                         if (ImGui::IsKeyPressed(ch))
                         {
@@ -261,7 +261,7 @@ public:
                         }
                     }
 
-                    if (ImGui::IsKeyPressed(ZEP_KEY_SPACE))
+                    if (ImGui::IsKeyPressed(ImGuiKey_Space))
                     {
                         pBuffer->GetMode()->AddKeyPress(' ', mod);
                         handled = true;
